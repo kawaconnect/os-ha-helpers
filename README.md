@@ -329,6 +329,10 @@ sysctl net.inet.carp.demotion=-240    # relative counter: undo with the negative
   `MASTER_ONLY_SERVICES="miniupnpd"`. The service must be *enabled* in the config of
   **both** nodes (UPnP settings are not HA-synced; with UPnP disabled on one node,
   nothing serves it after a failover). `check.sh` compares the UPnP section.
+- An mDNS relay (os-udpbroadcastrelay): install the plugin and configure the same
+  relay on **both** nodes, then add `udpbroadcastrelay` to `MASTER_ONLY_SERVICES` and
+  `OPNsense/udpbroadcastrelays` to `CHECK_COMPARE_CONFIG`. Do not add a separate
+  CARP hook or cron job for it: two managers for one service fight.
 ## Adding a WAN
 
 1. Add the NIC to both VMs, assign on both nodes, node IPs from a private /29.

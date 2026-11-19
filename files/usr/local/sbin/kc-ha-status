@@ -7,7 +7,7 @@ kc_ha_load
 role=$(kc_ha_role)
 carp=$(/sbin/ifconfig | awk '/carp:/ {printf "%s:%s ", $4, $2}')
 nm=$(printf '%s' "$carp" | grep -o MASTER | wc -l | tr -d ' '); nb=$(printf '%s' "$carp" | grep -o BACKUP | wc -l | tr -d ' ')
-def=$(/usr/bin/netstat -rn -f inet | awk '$1=="default"{print $2"@"$4; exit}')
+def=$(kc_ha_default_route)
 egress=$(/usr/bin/netstat -rn -f inet | awk '$1=="0.0.0.0/1"||$1=="128.0.0.0/1"{printf "%s>%s ", $1, $2}')
 pfs=$(/sbin/ifconfig pfsync0 2>/dev/null | awk '/syncok/ {s=$2} /maxupd/ {for(i=1;i<=NF;i++) if($i=="maxupd:") m=$(i+1); for(i=1;i<=NF;i++) if($i=="version:") v=$(i+1)} END {printf "syncok=%s maxupd=%s version=%s", s, m, v}')
 states=$(/sbin/pfctl -si 2>/dev/null | awk '/current entries/ {print $3}')

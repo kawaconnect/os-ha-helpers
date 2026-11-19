@@ -18,6 +18,14 @@ files as `differs from repo` until then).
   are made of address and device-name characters.
 
 ### Fixed
+- `kc-ha-egress` and `kc-ha-status` read the default route's device with `route -n get`
+  (new `kc_ha_default_route` in `kc-ha-lib`) instead of `netstat -rn`, which cuts long
+  device names (`vtnet1_vlan33` showed as `vtnet1_vlan3`). With the default route on
+  such a VLAN WAN, `kc-ha-egress` re-pinned a correct default route to the first
+  gateway and `check.sh` reported a false "default route ... is on" FAIL.
+- `check.sh`: `CHECK_COMPARE_CONFIG` also compares sections whose entries have child
+  elements (plugin instance lists such as `OPNsense/udpbroadcastrelays`); before, such
+  entries compared as empty.
 - `kc-ha-tailscale-primary` starts `tailscaled` again when it is interrupted during the
   handover hold, and logs an error if the service does not come back.
 - `drill.sh`: the hook log filter did nothing and used GNU-only `date -d`; it now
