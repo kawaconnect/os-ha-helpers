@@ -1,0 +1,24 @@
+# Settings for tools/check.sh (pass with -c FILE or HA_CHECK_CONF=FILE).
+# Every line shows the default.
+
+# Allowed difference between the two state tables, percent.
+CHECK_STATE_TOLERANCE_PCT=20
+# Maximum age of the os-carp-vip-dhcp keeper heartbeat, seconds.
+CHECK_KEEPER_MAX_AGE=600
+# Kea control agent used for the Kea HA check.
+CHECK_KEA_URL=http://127.0.0.1:8000/
+# pf anchors that exist on the master only and are left out of the rule-count
+# comparison. Empty = the names of the master-only services.
+CHECK_MASTER_ONLY_ANCHORS=""
+# Logical interfaces (wan, opt3, ...) that must have their interface gateway
+# set, for reply-to. Empty = every interface with an enabled upstream gateway.
+CHECK_REPLY_TO_IFS=""
+# Logical interfaces whose device name may differ between the nodes. Never list
+# an interface that carries an enabled upstream gateway.
+CHECK_DEVICES_MAY_DIFFER=""
+# config.xml sections that HA sync does not carry and that must be identical on
+# both nodes, and element names to ignore inside them. Add the config of every
+# master-only service that is not synced, e.g.
+# "installedpackages/miniupnpd/config OPNsense/udpbroadcastrelays".
+CHECK_COMPARE_CONFIG="installedpackages/miniupnpd/config"
+CHECK_COMPARE_IGNORE="overridewanip"

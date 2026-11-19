@@ -1,75 +1,218 @@
-# opnsense-ha
+# opnsense-ha: os-ha-helpers
 
-Scripts and hooks that make an OPNsense HA pair (CARP + pfsync + config sync) fail over
-cleanly in two cases stock OPNsense does not cover: a WAN with **one ISP-assigned (DHCP)
-public address**, and a backup node that needs internet access of its own. Written for
-OPNsense 26.1 / 26.7 and checked with live failover drills (takeover under a second, no
-lost packets or DNS failures, clean failback).
+An OPNsense plugin, **os-ha-helpers** ("CARP failover helpers", System: High Availability:
+Failover Helpers), that makes an HA pair (CARP + pfsync + config sync) fail over cleanly in
+cases stock OPNsense does not cover: a WAN with **one ISP-assigned (DHCP) public address**,
+a backup node that needs internet access of its own, and services that must run on the
+master only. Written for OPNsense 26.7 and checked with live failover drills (takeover
+under a second, no lost packets or DNS failures, clean failback).
 
-Everything is plain `sh` plus the Python that OPNsense already ships. The same files are
-installed unchanged on both nodes; one config file, `/usr/local/etc/kc-ha.conf`, holds
-every site value.
+The repository holds the plugin source in the layout of the
+[opnsense/plugins](https://github.com/opnsense/plugins) ports tree
+(`sysutils/ha-helpers/`), the signed package built from it (`packages/os-ha-helpers/`),
+the third-party `os-carp-vip-dhcp` package it works with for a DHCP WAN
+(`third-party/os-carp-vip-dhcp/`), and workstation tools to install, check, drill and
+build (`tools/`). Releases up to v0.0.3 were a set of loose shell scripts (the "script
+kit"); installing the plugin over them migrates a node (see
+[Upgrade from the script kit](#upgrade-from-the-script-kit)).
 
-## What it adds
+## Credits
 
-| Problem | Fix | Files |
-|---|---|---|
-| A DHCP WAN leases its address to the node's own MAC, so the address cannot float to the other node | `os-carp-vip-dhcp` plugin: a lease keeper on **both** nodes requests the lease with the CARP VIP's virtual MAC (`00:00:5e:00:01:<vhid>`); the ISP sees one client, the address lives on the VIP and moves with CARP. Follow mode rewrites VIP + gateway if the ISP ever hands out a new address | `plugins/os-carp-vip-dhcp/`, `examples/carpvipdhcp-settings.xml` |
-| On the BACKUP node every WAN gateway monitor reads *down* (dpinger can only probe through the VIPs), so OPNsense installs no / a wrong default route. A fresh master forwards nothing until monitors recover; the backup node itself has no internet | `kc-ha-egress`: pins the kernel default route to an upstream gateway whenever OPNsense left none or a LAN one. Candidates come from the config (upstream gateways by priority); on MASTER the first one that answers a ping wins, so a dead primary WAN is not pinned during a takeover. On BACKUP it adds `0/1` + `128/1` via the master's LAN VIP (found by vhid in the config) so the backup gets updates, NTP, CrowdSec etc. Runs on every CARP event and at boot, serialised with `lockf`; `--show` prints what it sees, `--dry-run` what it would do | `files/usr/local/sbin/kc-ha-egress`, hooks `carp/10-kc-ha-egress`, `start/96-kc-ha-egress` |
-| Unbound on the new master cached SERVFAILs while it was backup | `kc-unbound-master`: on the LAN VIP's MASTER event, restart Unbound and verify resolution | `files/usr/local/sbin/kc-unbound-master`, hook `carp/20-kc-unbound-master` |
-| Services that must run on one node only (UPnP, mDNS/SSDP relay, ddclient) run on both | `kc-ha-master-services`: starts `MASTER_ONLY_SERVICES` on the master, stops them elsewhere (CARP hook, boot, cron every 2 min) | `files/usr/local/sbin/kc-ha-master-services`, hooks `carp/30-...`, `start/98-...` |
-| With both nodes advertising the same Tailscale subnets, the backup can end up as the active subnet router | `kc-ha-tailscale-primary`: the BACKUP hands the routes to the MASTER. Off unless `TAILSCALE_NODES` is set | `files/usr/local/sbin/kc-ha-tailscale-primary`, hook `carp/60-kc-ha-tailscale` |
+The DHCP WAN part rests on [os-carp-vip-dhcp](https://github.com/toreamun/opnsense-plugins/tree/main/net/os-carp-vip-dhcp)
+by Tore Amundsen ([toreamun](https://github.com/toreamun)), from
+<https://github.com/toreamun/opnsense-plugins>. It keeps the ISP's DHCP lease on the
+CARP VIP's virtual MAC, so the public address lives on the VIP and fails over with it.
+Thank you. It is BSD-2-Clause licensed and used here unmodified, as the author's signed
+release package (see [Third-party package](#third-party-package-os-carp-vip-dhcp)).
 
-Two smaller boot hooks, use if they apply:
+## What it does
 
-- `start/95-pfsync-maxupd`: `pfsync0 maxupd 8` so standby TCP state windows are fresh
-  enough for connections to survive a planned failover (default 128 was too stale).
-- `start/97-kc-jumbo-mtu`: re-applies MTU 9000 on a VLAN whose (disabled) parent
-  interface OPNsense never sizes. Opt-in: it only touches the interfaces listed in
-  `JUMBO_MTU_IFS` in `kc-ha.conf` (none by default) and refuses any device that carries
-  an upstream gateway, so it is safe to install on every site.
+| Problem | What the plugin does |
+|---|---|
+| A DHCP WAN leases its address to the node's own MAC, so the address cannot float | Not this plugin: `os-carp-vip-dhcp` (above) requests the lease with the CARP VIP's virtual MAC on both nodes. Follow mode rewrites VIP and gateway if the ISP hands out a new address |
+| On the BACKUP every WAN gateway monitor reads *down* (dpinger can only probe through the VIPs), so OPNsense installs no or a wrong default route; a fresh master forwards nothing until the monitors recover, and the backup node has no internet | **Routing**: pins the kernel default route to an upstream gateway (by priority; on MASTER the first that answers a ping) on that gateway's device whenever OPNsense left none, a LAN one, or one on the wrong device. On BACKUP it adds `0/1` + `128/1` via the master's reference CARP address so the node gets updates, NTP, blocklists. Runs on every CARP event and at boot, serialised with `lockf` |
+| Unbound on the new master answers SERVFAIL from failures it cached as backup | **DNS**: on the reference VIP's MASTER event, restart Unbound and verify that it resolves |
+| Services that must run on one node only (UPnP, mDNS/SSDP relay, ddclient) run on both | **Master-only services**: started on MASTER, stopped otherwise (CARP event, boot, cron every 2 minutes) |
+| With both nodes advertising the same Tailscale subnets, the backup can stay the active subnet router | **Tailscale**: the BACKUP stops `tailscaled` for a moment so the routes move to the MASTER. Off unless the Tailscale nodes are set |
+| Standby TCP state windows too stale to survive a planned failover | **pfsync**: `pfsync0 maxupd` (default 8) at boot |
+| A VLAN on a disabled parent interface stays at MTU 1500 | **Jumbo MTU** (per node, opt-in): forces the listed devices to the jumbo MTU at boot; refuses a WAN device |
+
+Same events, same order and the same logic as the script kit: CARP hooks
+`10-hahelpers-egress`, `20-hahelpers-unbound`, `30-hahelpers-services`,
+`60-hahelpers-tailscale`; boot hooks `95-hahelpers-pfsync`, `96-hahelpers-egress`,
+`97-hahelpers-mtu`, `98-hahelpers-services`; scripts in
+`/usr/local/opnsense/scripts/OPNsense/HaHelpers/`. Logs: System: High Availability:
+Failover Helpers Log (`/var/log/hahelpers/`, tags `hahelpers-egress`, `-dns`,
+`-services`, `-tailscale`, `-mtu`, `-pfsync`).
 
 ## Requirements
 
-On the firewalls:
+- Two OPNsense 26.7 nodes already set up as an HA pair: CARP VIPs, pfsync on a dedicated
+  SYNC link, config sync. The plugin does not create that setup.
+- For a DHCP WAN: `os-carp-vip-dhcp` (vendored here, built for OPNsense 26.7, FreeBSD 15,
+  amd64). It is an optional dependency: the helpers work without it.
+- For the tools: root SSH (key login) from a workstation to both nodes; `sh`, `ssh`,
+  `openssl`, `tar`. `tools/drill.sh` also needs `ping`, `dig`, `curl` 7.84 or newer and
+  GNU `date`, and must sit on a LAN behind the pair.
 
-- Two OPNsense nodes (26.1 or 26.7) already set up as an HA pair: CARP VIPs, pfsync on a
-  dedicated SYNC link, config sync. This kit does not create that setup.
-- Root SSH from your workstation to both nodes (key login; the root shell may stay csh).
-- For a DHCP WAN: the vendored `os-carp-vip-dhcp` package (1.18.4) is built for OPNsense
-  26.7 (FreeBSD 15, amd64). On another release build it from its source (see
-  [Plugin package](#plugin-package)) and point `KC_HA_PLUGIN_DIR` at it, or set
-  `KC_HA_NO_PLUGIN=1` if no WAN is DHCP.
-
-On the workstation (Linux or macOS): `sh`, `ssh`, `tar`, `git` (or a `VERSION` file next
-to `install.sh`). `drill.sh` also needs `ping`, `dig`, `curl` 7.84 or newer and GNU `date`,
-and must sit on a LAN behind the pair, because it probes through the firewall.
-
-## Quick start
+## Install
 
 ```sh
 git clone https://github.com/kawaconnect/opnsense-ha.git && cd opnsense-ha
-
-# 1. install on the BACKUP node first, then the master (see "Install" for why)
-./install.sh root@<backup-node>
-./install.sh root@<master-node>
-
-# 2. on BOTH nodes: set VHID in /usr/local/etc/kc-ha.conf to the vhid of the LAN-side
-#    CARP VIP (the kit does nothing until it is set), then run install.sh again
-#    (every setting is described in the file; MASTER_ONLY_SERVICES, JUMBO_MTU_IFS and
-#    TAILSCALE_NODES only if they apply to you)
-
-# 3. acceptance test of the pair (read-only)
-./check.sh root@<node-a> root@<node-b>
-
-# 4. optional, in a maintenance window: a real failover and failback with probes
-./drill.sh root@<master> root@<backup>
+tools/install.sh root@<backup-node>      # backup node first
+tools/install.sh root@<master-node>
 ```
 
-For a DHCP WAN, also add a keeper in the GUI (Services > CARP VIP DHCP, synced by HA) for
-the WAN VIP as in `examples/carpvipdhcp-settings.xml`; `examples/keeper.conf.rendered` is
-what the plugin renders from it. The addresses in `examples/` are documentation addresses
-(RFC 5737), replace them with yours.
+`tools/install.sh` verifies each package (`SHA256SUMS`, and `SHA256SUMS.sig` against a
+public key whose fingerprint is pinned in the script), installs `os-carp-vip-dhcp`
+(skip with `HA_NO_CARPVIPDHCP=1`) and `os-ha-helpers` when the node has another version,
+and prints the node status. Without the tools: copy the `.pkg` to the node and run
+`pkg install -U -y ./os-ha-helpers-<version>.pkg`.
+
+Then, on the master, open System: High Availability: Failover Helpers, tick **Enable**,
+set the **Reference VHID** (the LAN-side CARP VIP) and whatever else applies, **Apply**.
+Add "CARP failover helpers" to the HA sync items (System: High Availability: Settings) and
+synchronise, or make the same settings on the backup. The "This node only" settings are
+never synchronised; set them on each node.
+
+Check the pair (read-only) and, in a maintenance window, drill a real failover:
+
+```sh
+tools/check.sh [-c site-check.conf] root@<node-a> root@<node-b>
+tools/drill.sh root@<master> root@<backup>
+```
+
+For a DHCP WAN also add a keeper in Services: CARP VIP DHCP (synced by HA) for the WAN
+VIP as in `examples/carpvipdhcp-settings.xml`; `examples/keeper.conf.rendered` is what
+the plugin renders from it (documentation addresses, RFC 5737).
+
+## Settings
+
+| GUI field | Script name | Default | |
+|---|---|---|---|
+| Enable, Reference VHID | `VHID` | off, none | reference LAN-side CARP VIP; nothing happens without it |
+| Boot grace | `BOOT_GRACE` | 120 | seconds after boot a MASTER event is distrusted while the peer answers |
+| Backup egress | `BACKUP_EGRESS` | on | `0/1` + `128/1` via the master on the BACKUP |
+| Pin default route | `PIN_DEFAULT_ROUTE` | on | keep the default route on a usable upstream gateway and its device |
+| Unusable default gateways | `UNUSABLE_DEFAULT_GWS` | RFC 1918 + link-local patterns | unconfigured default gateways treated as unusable |
+| Gateway / peer ping timeout | `GW_PING_TIMEOUT_MS`, `PEER_PING_TIMEOUT_MS` | 700, 500 | probe timeouts (ms) |
+| Routing delay, Lock timeout | `EGRESS_HOOK_DELAY`, `LOCK_TIMEOUT` | 2, 30 | hook timing |
+| Restart Unbound on takeover, Check name/server, Restart attempts, Settle time, Check delay | `UNBOUND_RESTART_ON_MASTER`, `DNS_*` | on, opnsense.org, 127.0.0.1, 2, 4, 3 | Unbound restart and check |
+| Master-only services, Settle time, Event delay, Boot delay | `MASTER_ONLY_SERVICES`, `SERVICE_SETTLE`, `SERVICES_HOOK_DELAY`, `SERVICES_BOOT_DELAY` | none, 1, 3, 15 | services on the master only |
+| Tailscale nodes, Handover hold | `TAILSCALE_NODES`, `TAILSCALE_HANDOVER_HOLD` | none, 45 | Tailscale route handover |
+| pfsync maxupd | `PFSYNC_MAXUPD` | 8 (0 = leave alone) | set at boot; on a running MASTER only at the next boot |
+| Jumbo MTU interfaces, Jumbo MTU (this node only) | `JUMBO_MTU_IFS`, `JUMBO_MTU` | none, 9000 | devices forced to a jumbo MTU at boot |
+
+The settings live in `config.xml` under `OPNsense/HaHelpers`: `general` (HA-synced) and
+`local` (per node). configd renders them to `/usr/local/etc/hahelpers.conf` for the
+scripts. On the console: `configctl hahelpers show` (node state, as on the Failover Helpers
+Status page), `configctl hahelpers settings` (settings in effect), and dry runs that change
+nothing: `configctl hahelpers routes dryrun` (route commands), `routes show`,
+`services dryrun` (master-only services), `dns dryrun` (Unbound on takeover),
+`tailscale dryrun` (route handover).
+
+## Upgrade from the script kit
+
+Installing the package on a node that runs the script kit (`/usr/local/sbin/kc-ha-*`,
+`/usr/local/etc/kc-ha.conf`):
+
+1. The model migration imports every setting from `kc-ha.conf` (read as text, never
+   executed; an invalid value keeps the default) and enables the helpers if `VHID` was set.
+   `CHECK_*` and `DRILL_*` were settings of the workstation tools: they move to a
+   `tools/check.sh -c` file (`tools/check.conf.sample`) and the `DRILL_*` environment.
+2. The kit's files (scripts, hooks, cron files, `kc-ha.conf`, version stamp) are archived
+   to `/var/backups/ha-helpers-legacy-<time>.tar` and removed, then the settings are
+   applied (`configctl hahelpers start`): the same live steps `install.sh` took.
+3. `tools/check.sh` fails while any kit file is left.
+
+Do it backup node first, then the master, with probes running. **Rollback** on a node:
+
+```sh
+pkg delete -y os-ha-helpers
+tar -xpf /var/backups/ha-helpers-legacy-<time>.tar -C /
+/usr/local/sbin/kc-ha-egress; /usr/local/sbin/kc-ha-master-services
+```
+
+(or `git checkout v0.0.3 && ./install.sh root@<node>`). The plugin's settings stay in
+`config.xml`, so a later reinstall keeps them.
+
+## Uninstall
+
+`pkg delete os-ha-helpers` on each node, backup first. It removes the backup egress routes,
+the cron jobs and the rendered settings; the settings stay in `config.xml`. pfsync
+`maxupd` and any jumbo MTU go back to the OPNsense defaults at the next reboot.
+
+## Build and sign
+
+```sh
+tools/build.sh root@<build-host>         # OPNsense 26.7 build VM, never a production firewall
+tools/sign.sh <private key file>         # SHA256SUMS + SHA256SUMS.sig in packages/os-ha-helpers
+```
+
+`tools/build.sh` copies `sysutils/ha-helpers` into a checkout of `opnsense/plugins` and
+`opnsense/core` (`stable/26.7`) on the build host and runs `make lint` and `make package`
+there. The private key never goes in the repository. Verify a package by hand:
+
+```sh
+cd packages/os-ha-helpers
+sha256sum -c SHA256SUMS
+openssl base64 -d -in SHA256SUMS.sig -out /tmp/sig.bin
+openssl dgst -sha256 -verify ../../keys/release.pub -signature /tmp/sig.bin SHA256SUMS
+openssl pkey -pubin -in ../../keys/release.pub -outform DER | sha256sum   # must equal PIN_ha_helpers in tools/install.sh
+```
+
+## Upstream submission (opnsense/plugins)
+
+The plugin is meant to go to [opnsense/plugins](https://github.com/opnsense/plugins) once it has run in production
+for a while. Done: ports-tree layout, BSD-2-Clause headers in every source file, `PLUGIN_MAINTAINER`, MVC model with
+migrations, forms, ACL, menu, configd actions, syshooks, cron via `hahelpers_cron()`, HA sync via
+`hahelpers_xmlrpc_sync()`, `make lint` clean on OPNsense 26.7, phpcs with the core `ruleset.xml` clean. Still to do
+before a pull request:
+
+- Drop the script-kit migration (the `kc-ha.conf` import in `Migrations/M1_0_0.php` and the legacy archive in
+  `+POST_INSTALL.post`) or move it to a separate upgrade note: it only serves installs of this repository's kit.
+- Trim the site history from the script comments (dates, field reports) to plain explanations.
+- Prove the HA sync of the `general` sub-section (`OPNsense.HaHelpers.general`) with a real sync between two nodes
+  and confirm the `local` section is left alone.
+- Run `make style` on an OPNsense development box (pycodestyle and phpcs installed there) and `make lint` against
+  `master`, not only `stable/26.7`.
+- Expect review questions about the shell scripts: reviewers may prefer the logic in PHP or Python behind configd.
+  Behaviour must stay the same, so any rewrite needs the drills again.
+- Agree the name, menu place and the optional relation to os-carp-vip-dhcp and os-tailscale with the maintainers
+  (open an issue first), and write the documentation page for docs.opnsense.org.
+- Pull request against `master` as one commit `sysutils/ha-helpers: new plugin`, without `packages/`, `tools/` or
+  `third-party/`.
+
+## What HA config sync does not carry (edit on every node)
+
+Gateways and gateway groups, system tunables, Suricata, CrowdSec, Tailscale, interface
+settings, and the plugin's "This node only" settings. The plugin's general settings are
+carried when "CARP failover helpers" is ticked in the sync items.
+
+## Security notes
+
+- The helpers run as **root on the firewall**, from CARP events, at boot and from cron.
+  The rendered `/usr/local/etc/hahelpers.conf` is only sourced when it belongs to root
+  and is not writable by others; every value has passed the model's masks.
+- The routing helper changes the kernel routing table (default route, `0/1` + `128/1` on
+  the backup). It never touches firewall rules, NAT or `config.xml`.
+- The Tailscale handover stops `tailscaled` on the backup for the hold time. If Tailscale
+  is your only way in to that node, keep another one.
+- The tools need root SSH to both nodes: key login from an admin workstation, SSH limited
+  to the management network.
+- No credentials, keys or site addresses are stored in this repository or written by the
+  plugin. The release signing key is kept outside it.
+
+## Troubleshooting
+
+| Symptom | Look at |
+|---|---|
+| Status shows the helpers not running | Enable and Reference VHID in the settings, then Apply |
+| `tools/check.sh`: `files of the old script kit are still present` | the package did not archive them (see the install output), or old copies (`*.bak`): archive and remove them |
+| Backup node has no internet | Failover Helpers Status: role BACKUP, two backup egress routes |
+| New master forwards nothing right after takeover | the default route must be an upstream gateway on its WAN device; the log shows what was pinned |
+| DNS fails after a takeover | `hahelpers-dns` lines in the log; the check name must resolve from the firewall |
+| A master-only service does not start | `hahelpers-services` lines; the service must be enabled in the config of **both** nodes |
 
 ## Interface layout for a DHCP WAN
 
@@ -84,176 +227,6 @@ what the plugin renders from it. The addresses in `examples/` are documentation 
 - Second WAN with a static address: plain CARP VIP, no keeper.
 - Outbound NAT: translate to the VIP, plus one rule for the node /29 itself.
 
-## What HA config sync does not carry (edit on every node)
-
-Gateways and gateway groups, system tunables, `rc.syshook.d` hooks, Suricata,
-CrowdSec, Tailscale, interface settings. `install.sh` covers the hook/script part.
-
-## Contents
-
-| Path | Purpose |
-|---|---|
-| `files/usr/local/sbin/kc-ha-lib` | shared helpers: reads `kc-ha.conf` + `config.xml` (reference VIP by vhid, its device, pfsync peer, upstream gateways with devices), role, uptime, peer-alive, boot-grace gate |
-| `kc-ha-egress` | default route / backup egress (above) |
-| `kc-unbound-master` | Unbound restart on a trusted MASTER event |
-| `kc-ha-master-services` | start/stop `MASTER_ONLY_SERVICES` by role (carp hook, boot, cron every 2 min) |
-| `kc-ha-status` | one-screen status of a node (`--kv` for scripts) |
-| `kc-ha-tailscale-primary` | the BACKUP hands the Tailscale LAN routes to the MASTER (carp hook, cron every 2 min); off unless `TAILSCALE_NODES` is set |
-| `files/usr/local/etc/kc-ha.conf.sample` | every setting with its default and what it does; copied to `kc-ha.conf` once |
-| `install.sh` | idempotent install of plugin + files + version stamp, then live apply and status |
-| `check.sh` | acceptance test of the pair (below) |
-| `drill.sh` | controlled failover/failback with probes of existing flows |
-
-Nothing is hardcoded: the same files are installed unchanged on every node of every
-site, and `kc-ha.conf` (identical on both nodes) is the only place where behaviour is
-set. No script or hook names a vhid, a VIP, a device, an address, a service or a timing;
-the defaults all sit in one block at the top of `kc-ha-lib` and every one can be
-overridden.
-
-### Settings (`kc-ha.conf`)
-
-| Setting | Default | What it controls |
-|---|---|---|
-| `VHID` | *(none, required)* | reference LAN-side CARP VIP; empty = kit inert |
-| `BOOT_GRACE` | 120 | seconds after boot a MASTER event is distrusted while the peer is alive |
-| `MASTER_ONLY_SERVICES`, `SERVICE_SETTLE` | empty, 1 | services run on the master only; wait before verifying a start/stop |
-| `BACKUP_EGRESS` | yes | 0/1 + 128/1 routes via the master on the BACKUP node |
-| `PIN_DEFAULT_ROUTE` | yes | keep the default route on a usable upstream gateway and its device |
-| `UNUSABLE_DEFAULT_GWS` | RFC 1918 + link-local patterns | unconfigured default gateways treated as unusable |
-| `GW_PING_TIMEOUT_MS`, `PEER_PING_TIMEOUT_MS` | 700, 500 | probe timeouts |
-| `UNBOUND_RESTART_ON_MASTER` | yes | restart Unbound on takeover |
-| `DNS_CHECK_NAME`, `DNS_CHECK_SERVER`, `DNS_RESTART_TRIES`, `DNS_SETTLE`, `DNS_RETRY_WAIT` | opnsense.org, 127.0.0.1, 2, 4, 3 | how resolution is verified after the restart |
-| `PFSYNC_MAXUPD` | 8 | `pfsync0 maxupd` at boot; empty = leave it |
-| `JUMBO_MTU_IFS`, `JUMBO_MTU` | empty, 9000 | interfaces forced to a jumbo MTU at boot; WAN devices refused |
-| `EGRESS_HOOK_DELAY`, `SERVICES_HOOK_DELAY`, `SERVICES_BOOT_DELAY`, `LOCK_TIMEOUT` | 2, 3, 15, 30 | hook timing |
-| `CHECK_*` | see sample | `check.sh`: state tolerance, keeper age, Kea URL, master-only anchors, reply-to interfaces, interfaces whose device may differ, config sections compared across nodes |
-| `TAILSCALE_NODES`, `TAILSCALE_HANDOVER_HOLD` | empty, 45 | Tailscale host names of both nodes (empty = off); seconds `tailscaled` stays down on the BACKUP to hand the routes over |
-| `DRILL_*` | see sample | `drill.sh`: demotion, hold, probe address, DNS name, HTTPS URL |
-
-`kc-ha-status --settings` prints what is in effect on a node; `check.sh` fails if the
-two nodes' `kc-ha.conf` differ. The cron interval of `kc-ha-master-services` is the one
-value kept in a file of its own (`/etc/cron.d/kc-ha-master-services`), because cron reads
-it from there.
-
-## Install / re-apply / verify
-
-```sh
-./install.sh root@<backup-node>     # backup node first
-./install.sh root@<master-node>
-./check.sh   root@<node-a> root@<node-b>
-```
-
-Environment for all three scripts:
-
-| Variable | Meaning |
-|---|---|
-| `KC_HA_SSH` | ssh command to use (default `ssh`), for example `ssh -J bastion` for a jump host |
-| `KC_HA_NO_PLUGIN=1` | skip the `os-carp-vip-dhcp` plugin and its checks (no DHCP WAN) |
-| `KC_HA_PLUGIN_DIR` | directory with the plugin `.pkg` and its `SHA256SUMS` (default `plugins/os-carp-vip-dhcp`) |
-| `KC_HA_YES=1` | `drill.sh` only: do not ask before demoting the master |
-
-`install.sh` is idempotent. It checks the plugin package against `SHA256SUMS` and installs
-it only when the node has a different version, copies the scripts, hooks and cron files
-(as root-owned files), creates `kc-ha.conf` from the sample if the node has none (an
-existing one is never overwritten), stamps the version, applies the hooks live and prints
-`kc-ha-status`. A node upgraded from a release that kept the vhid or the jumbo interface
-names inside the scripts gets them carried into `kc-ha.conf`. The one live step that can disturb a node
-is `pfsync0 maxupd` when it is still at the default (changing it restarts the pfsync bulk
-sync, which demotes CARP for ~1 s and makes a MASTER hand over and preempt back), so the
-script refuses to change it live on a MASTER and leaves it for the next reboot. That is
-why the backup node goes first.
-
-`check.sh` is the acceptance test and changes nothing. Per node: kc-ha version stamp,
-plugin version, every
-file byte-identical to the repo, keeper running with a fresh heartbeat, pfsync `syncok` +
-`maxupd 8`, CARP demotion 0 / preempt on / not in maintenance mode, peer answering on the
-SYNC link, `proto carp` pass rules loaded, no "master timed out" in today's log, every
-`JUMBO_MTU_IFS` interface at its MTU and none of them a WAN device, one role
-per node, backup-egress routes only on the BACKUP, default route on a real gateway **and
-on that gateway's WAN device**, no kill-states on gateways, wan interface gateway set, Kea
-HA in touch. Pair: interface **device names**, interface gateways, gateways, VIPs (minus
-skew), tunables, hasync items, hook directories and `kc-ha.conf` identical; same OPNsense
-version and pfsync protocol version (1400 on 26.1, 1500 on 26.7; not judged per node);
-same loaded rule/NAT counts; state tables within 20%; exactly one MASTER.
-Exit 0 = `ALL OK`, 1 = at least one `FAIL` line, 2 = a node could not be reached or has no
-kit installed. `warn` lines do not fail the check.
-
-`drill.sh root@<master> root@<backup> [hold] [probe-ip] [dns-vip] [https-url]` pre-flights
-both nodes, asks for confirmation, probes an existing
-ping flow, DNS at the VIP and one persistent HTTPS connection from the workstation, demotes
-the master **detached on the node** (so it fails back by itself even if you lose it), and
-reports losses per phase plus the hook log lines. Expect 0-1 lost pings and 0 DNS/HTTPS
-failures. It is a real failover: run it in a maintenance window.
-
-On a node, `kc-ha-status` prints one screen of state (`--kv` for scripts, `--settings` for
-the settings in effect), `kc-ha-egress --show` prints what the routing script sees and
-`kc-ha-egress --dry-run` the route commands it would run.
-
-### After an OPNsense update
-
-Files under `/usr/local/sbin` and `rc.syshook.d` are not owned by any package, so minor
-updates keep them. A major upgrade (new ABI, e.g. 26.7 to 27.1) may drop or break the
-vendored `os-carp-vip-dhcp` package (it is not in the OPNsense repos and will not be
-re-installed by the firmware health check). Procedure, one node at a time, backup first:
-
-1. Update the backup node, reboot it, `./check.sh`, fix anything with `./install.sh`.
-2. Hand over (`sysctl net.inet.carp.demotion=240` on the master), confirm services on the
-   new master, update the old master, reboot, `./install.sh` if needed, fail back
-   (`=-240`), `./check.sh`.
-
-### Uninstall
-
-On each node, backup first:
-
-```sh
-rm -f /usr/local/sbin/kc-ha-* /usr/local/sbin/kc-unbound-master \
-      /usr/local/etc/rc.syshook.d/carp/*-kc-* /usr/local/etc/rc.syshook.d/start/*-kc-* \
-      /usr/local/etc/rc.syshook.d/start/95-pfsync-maxupd \
-      /etc/cron.d/kc-ha-* /usr/local/etc/kc-ha.conf* /usr/local/etc/kc-ha.version
-route delete -net 0.0.0.0/1; route delete -net 128.0.0.0/1     # backup-egress routes, if present
-pkg delete os-carp-vip-dhcp                                    # only if no keeper is in use
-```
-
-The pfsync `maxupd` value and any jumbo MTU go back to the OPNsense defaults at the next
-reboot.
-
-## Security notes
-
-- Everything here runs as **root on the firewall**, from CARP events, at boot and from
-  cron. `kc-ha.conf` is sourced by those root shells: keep it owned by root and not
-  writable by anyone else (`install.sh` creates it that way), and treat an edit of it as
-  a change to the firewall.
-- `install.sh`, `check.sh` and `drill.sh` need root SSH to both nodes. Use key login from
-  an admin workstation, limit SSH on the firewall to the management network, and do not
-  put a password in `KC_HA_SSH`.
-- `kc-ha-egress` changes the kernel routing table (default route, `0/1` + `128/1` on the
-  backup). It never touches firewall rules, NAT or `config.xml`. `BACKUP_EGRESS=no` and
-  `PIN_DEFAULT_ROUTE=no` turn the two parts off.
-- `kc-ha-tailscale-primary` stops `tailscaled` on the backup node for
-  `TAILSCALE_HANDOVER_HOLD` seconds. If Tailscale is your only way in to that node, keep
-  another one.
-- The plugin package is third-party code installed as root; see below for where it comes
-  from and how to verify it.
-- No credentials, API keys or site addresses are stored in this repo or written by it.
-
-## Troubleshooting
-
-| Symptom | Look at |
-|---|---|
-| `install.sh` / `check.sh` say `VHID is not set` | set `VHID` in `/usr/local/etc/kc-ha.conf` on both nodes; the kit is inert until then |
-| `check.sh`: `could not collect status from one of the nodes` | `ssh root@<node> kc-ha-status` by hand: ssh failing, or `install.sh` never ran on that node |
-| `check.sh`: `/usr/local/... differs from repo` | the node runs another version of the kit: `./install.sh root@<node>` |
-| `check.sh`: `carp demotion is N` | a drill or a manual `sysctl net.inet.carp.demotion=N` was left set (undo with `=-N`), or the pfsync bulk sync is stuck (`ifconfig pfsync0`) |
-| `check.sh`: `no 'proto carp' pass rules loaded` | `configctl filter reload` on that node |
-| Backup node has no internet | `kc-ha-egress --show` on it: role must be BACKUP and `egress_routes=2` |
-| New master forwards nothing right after takeover | `kc-ha-egress --show` on it: the default route must be an upstream gateway on its WAN device; `grep kc-ha-egress` in the system log shows what was pinned |
-| DNS fails after a takeover | `grep kc-ha-dns` in the system log; `DNS_CHECK_NAME` must resolve from the firewall |
-| A master-only service does not start | `grep kc-ha-services` in the system log; the service must be enabled in the config of **both** nodes |
-
-The scripts log to syslog with the tags `kc-ha-egress`, `kc-ha-dns`, `kc-ha-services`,
-`kc-ha-tailscale` and `kc-jumbo-mtu` (System > Log Files > General, or
-`/var/log/system/system_*.log`).
-
 ## Boot-time false MASTER (known, partly mitigated)
 
 A node that boots while the peer is healthy can time out to MASTER on its VLAN VIPs for
@@ -262,10 +235,10 @@ ruleset is not fully loaded yet; demotion does not prevent a timeout). During th
 both nodes are MASTER and clients that learn the booting node's MAC lose connectivity.
 
 Mitigation in this kit: a MASTER event within `BOOT_GRACE` seconds of boot while the pfsync
-peer still answers on the SYNC link is treated as false by `kc-unbound-master` and
-`kc-ha-master-services` (no restart, no service start). `kc-ha-egress` still acts (removing
+peer still answers on the SYNC link is treated as false by the Unbound restart and the
+master-only services (no restart, no service start). the routing part still acts (removing
 the backup-egress routes on a false master is harmless and they come back on the BACKUP
-event). `check.sh` warns on "master timed out" in the log. Prefer rebooting a node while the
+event). `tools/check.sh` warns on "master timed out" in the log. Prefer rebooting a node while the
 *other* one is master and expect a short blip; test it in a window before relying on it.
 
 ## Failover test
@@ -281,7 +254,7 @@ sysctl net.inet.carp.demotion=-240    # relative counter: undo with the negative
 - **Device names must match on both nodes** for every WAN: synced states carry
   `route-to <gw>@<device>` (pfsync 1400+). With WAN2 on `vtnet1` on one node and `vtnet2`
   on the other, every established connection stalled for the whole failover while ping/DNS
-  to the VIP looked fine. `check.sh` fails on differing device names.
+  to the VIP looked fine. `tools/check.sh` fails on differing device names.
 - **Converting a live gateway to a CARP VIP**, per interface on the primary: change the
   interface address `.1` → `.2`, add CARP VIP `.1` (skew 0), `configctl interface
   reconfigure <opt>`, `configctl filter reload`. ~3 s in BACKUP then MASTER; routed traffic
@@ -289,7 +262,7 @@ sysctl net.inet.carp.demotion=-240    # relative counter: undo with the negative
   secondary times out to MASTER and duplicates the address.
 - **After the first VIP, reload the filter**: `interface reconfigure` alone does not add the
   automatic `pass proto carp` rules; without them the node drops the peer's advertisements
-  and both stay MASTER. `check.sh` counts those rules.
+  and both stay MASTER. `tools/check.sh` counts those rules.
 - **Reconfiguring an interface or pfsync on the master demotes it** (pfsync bulk start,
   factor 240) until "bulk done": a ~1 s handover and back when both nodes run the same
   version. With mismatched versions the bulk handshake can stall (`syncok: 0`, no "bulk
@@ -315,36 +288,37 @@ sysctl net.inet.carp.demotion=-240    # relative counter: undo with the negative
 - Tailscale: with both nodes advertising the same subnets, the control plane keeps the
   routes on whichever node had them first, so after a failover or failback the backup can
   be the active subnet router and Tailscale drops what the master forwards. Approve the
-  subnet routes for both nodes in the admin console and set `TAILSCALE_NODES` so
-  `kc-ha-tailscale-primary` hands them back to the master. For a 1:1 NAT that sends LAN
+  subnet routes for both nodes in the admin console and set "Tailscale nodes" so the
+  helpers hand them back to the master. For a 1:1 NAT that sends LAN
   traffic to a single tailnet host, assign `tailscale0` as an interface on both nodes
   (same `optN`), allow it, and add an outbound NAT rule on it to that host with the
   interface address as target, so replies come back to the node that sent them.
 - A configured upstream gateway may be a private address (a cellular or CPE router LAN
-  such as `192.168.4.1`): `kc-ha-egress` and `check.sh` accept a default route through
+  such as `192.168.4.1`): the routing helper and `tools/check.sh` accept a default route through
   any *configured* upstream gateway, whatever its address, so a WAN failover OPNsense
   has already made is not undone by a CARP event.
 - Services that must run on one node only (UPnP/miniupnpd, mDNS/SSDP relay, ddclient):
-  list them in `MASTER_ONLY_SERVICES` in `kc-ha.conf`, for example
-  `MASTER_ONLY_SERVICES="miniupnpd"`. The service must be *enabled* in the config of
+  list them under "Master-only services", for example
+  `miniupnpd`. The service must be *enabled* in the config of
   **both** nodes (UPnP settings are not HA-synced; with UPnP disabled on one node,
-  nothing serves it after a failover). `check.sh` compares the UPnP section.
+  nothing serves it after a failover). `tools/check.sh` compares the UPnP section.
 - An mDNS relay (os-udpbroadcastrelay): install the plugin and configure the same
-  relay on **both** nodes, then add `udpbroadcastrelay` to `MASTER_ONLY_SERVICES` and
+  relay on **both** nodes, then add `udpbroadcastrelay` to the master-only services and
   `OPNsense/udpbroadcastrelays` to `CHECK_COMPARE_CONFIG`. Do not add a separate
   CARP hook or cron job for it: two managers for one service fight.
+
 ## Adding a WAN
 
 1. Add the NIC to both VMs, assign on both nodes, node IPs from a private /29.
 2. CARP VIP for the public address (new vhid); DHCP WAN → add a keeper on both nodes.
-3. Gateway on both nodes: Upstream, unique priority, kill-states off. `kc-ha-egress`
+3. Gateway on both nodes: Upstream, unique priority, kill-states off. the routing helper
    picks the primary by priority on its own, no edit needed.
 4. Outbound NAT rules for the new VIP; decide which policy routes / gateway groups may
    use it.
 
-## Plugin package
+## Third-party package: os-carp-vip-dhcp
 
-`plugins/os-carp-vip-dhcp/` holds the package `install.sh` installs:
+`third-party/os-carp-vip-dhcp/` holds the package `tools/install.sh` installs:
 `os-carp-vip-dhcp-1.18.4`, built for OPNsense 26.7 (ABI `FreeBSD:15:amd64`, pure Python and
 PHP, no dependencies). It is third-party software (BSD 2-Clause) by Tore Amundsen from
 <https://github.com/toreamun/opnsense-plugins> and is not in the OPNsense repos. The files
@@ -361,7 +335,7 @@ Verify against the author's key, taken from the upstream repository rather than 
 this directory:
 
 ```sh
-cd plugins/os-carp-vip-dhcp
+cd third-party/os-carp-vip-dhcp
 curl -fsSLo /tmp/upstream-release.pub \
   https://raw.githubusercontent.com/toreamun/opnsense-plugins/v1.18.4/keys/release.pub
 cmp /tmp/upstream-release.pub release.pub          # the vendored copy is the author's key
@@ -370,8 +344,8 @@ openssl base64 -d -in SHA256SUMS.sig -out /tmp/SHA256SUMS.sig.bin
 openssl dgst -sha256 -verify /tmp/upstream-release.pub -signature /tmp/SHA256SUMS.sig.bin SHA256SUMS
 ```
 
-The upstream key has not changed since v1.0. `install.sh` itself only checks the package
-against `SHA256SUMS`; do the signature check above whenever the package is replaced.
+The upstream key has not changed since v1.0. `tools/install.sh` checks `SHA256SUMS` and the signature before every install, with the key
+fingerprint pinned in the script.
 
 ### Upgrading the plugin
 
@@ -381,7 +355,7 @@ against `SHA256SUMS`; do the signature check above whenever the package is repla
 2. Upgrade **both nodes before the next HA config sync** of the `carpvipdhcp` item: a node
    on an older version does not understand settings migrated by a newer one. Do not run a
    scheduled "HA update and reconfigure backup" job in between.
-3. Backup node first (`./install.sh root@<backup>`): on 1.14 and later a BACKUP keeper sends
+3. Backup node first (`tools/install.sh root@<backup>`): on 1.14 and later a BACKUP keeper sends
    nothing on the WAN, so check its log says `initial CARP role ...: BACKUP` and the
    heartbeat shows `bound=-`. Then the master right after: the keeper restarts, renews at
    once (`DHCP BOUND` in its log) and the VIP never leaves the interface.
@@ -389,5 +363,5 @@ against `SHA256SUMS`; do the signature check above whenever the package is repla
    right after the upgrade (a prefix change costs one short CARP failover per node). Compare
    the VIP prefix and gateway with the `mask=` and `gw=` of the last `DHCP reply: ACK` line
    in `/var/log/carpvipdhcp-*.log` beforehand; if they match, nothing changes.
-5. `./check.sh` must say `ALL OK`; compare the `OPNsense/CarpVipDhcp` section of both
+5. `tools/check.sh` must say `ALL OK`; compare the `OPNsense/CarpVipDhcp` section of both
    `config.xml` files (only `persisted_at` may differ).

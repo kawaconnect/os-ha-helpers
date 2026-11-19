@@ -1,0 +1,173 @@
+<!--
+    Copyright (C) 2026 KawaConnect LLC
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    1. Redistributions of source code must retain the above copyright notice,
+       this list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in the
+       documentation and/or other materials provided with the distribution.
+
+    THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+    INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+    AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+    AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+    OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+-->
+<model>
+    <mount>//OPNsense/HaHelpers</mount>
+    <description>CARP failover helpers</description>
+    <version>1.0.0</version>
+    <items>
+        <!-- general: the same on both nodes, carried by HA config sync -->
+        <general>
+            <enabled type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </enabled>
+            <vhid type="IntegerField">
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>255</MaximumValue>
+            </vhid>
+            <bootGrace type="IntegerField">
+                <Default>120</Default>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>3600</MaximumValue>
+                <Required>Y</Required>
+            </bootGrace>
+            <masterOnlyServices type="CSVListField">
+                <Mask>/^[a-z0-9_-]{1,64}$/</Mask>
+                <MaskPerItem>Y</MaskPerItem>
+                <ValidationMessage>Service names may only contain lowercase letters, digits, dashes and underscores.</ValidationMessage>
+            </masterOnlyServices>
+            <serviceSettle type="IntegerField">
+                <Default>1</Default>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>60</MaximumValue>
+                <Required>Y</Required>
+            </serviceSettle>
+            <backupEgress type="BooleanField">
+                <Default>1</Default>
+                <Required>Y</Required>
+            </backupEgress>
+            <pinDefaultRoute type="BooleanField">
+                <Default>1</Default>
+                <Required>Y</Required>
+            </pinDefaultRoute>
+            <unusableDefaultGws type="CSVListField">
+                <Default>10.*,192.168.*,172.1[6-9].*,172.2[0-9].*,172.3[01].*,169.254.*</Default>
+                <Required>Y</Required>
+                <Mask>/^[0-9.*?\[\]-]{1,32}$/</Mask>
+                <MaskPerItem>Y</MaskPerItem>
+                <ValidationMessage>Use address patterns made of digits, dots and the wildcards * ? [ ].</ValidationMessage>
+            </unusableDefaultGws>
+            <gwPingTimeout type="IntegerField">
+                <Default>700</Default>
+                <MinimumValue>100</MinimumValue>
+                <MaximumValue>10000</MaximumValue>
+                <Required>Y</Required>
+            </gwPingTimeout>
+            <peerPingTimeout type="IntegerField">
+                <Default>500</Default>
+                <MinimumValue>100</MinimumValue>
+                <MaximumValue>10000</MaximumValue>
+                <Required>Y</Required>
+            </peerPingTimeout>
+            <unboundRestart type="BooleanField">
+                <Default>1</Default>
+                <Required>Y</Required>
+            </unboundRestart>
+            <dnsCheckName type="HostnameField">
+                <Default>opnsense.org</Default>
+                <Required>Y</Required>
+            </dnsCheckName>
+            <dnsCheckServer type="NetworkField">
+                <Default>127.0.0.1</Default>
+                <NetMaskAllowed>N</NetMaskAllowed>
+                <Required>Y</Required>
+            </dnsCheckServer>
+            <dnsRestartTries type="IntegerField">
+                <Default>2</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>10</MaximumValue>
+                <Required>Y</Required>
+            </dnsRestartTries>
+            <dnsSettle type="IntegerField">
+                <Default>4</Default>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>60</MaximumValue>
+                <Required>Y</Required>
+            </dnsSettle>
+            <dnsRetryWait type="IntegerField">
+                <Default>3</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>60</MaximumValue>
+                <Required>Y</Required>
+            </dnsRetryWait>
+            <pfsyncMaxupd type="IntegerField">
+                <Default>8</Default>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>255</MaximumValue>
+                <Required>Y</Required>
+            </pfsyncMaxupd>
+            <egressHookDelay type="IntegerField">
+                <Default>2</Default>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>60</MaximumValue>
+                <Required>Y</Required>
+            </egressHookDelay>
+            <servicesHookDelay type="IntegerField">
+                <Default>3</Default>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>60</MaximumValue>
+                <Required>Y</Required>
+            </servicesHookDelay>
+            <servicesBootDelay type="IntegerField">
+                <Default>15</Default>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>600</MaximumValue>
+                <Required>Y</Required>
+            </servicesBootDelay>
+            <lockTimeout type="IntegerField">
+                <Default>30</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>600</MaximumValue>
+                <Required>Y</Required>
+            </lockTimeout>
+            <tailscaleNodes type="CSVListField">
+                <Mask>/^[A-Za-z0-9._-]{1,63}$/</Mask>
+                <MaskPerItem>Y</MaskPerItem>
+                <ValidationMessage>Tailscale host names may only contain letters, digits, dots, dashes and underscores.</ValidationMessage>
+            </tailscaleNodes>
+            <tailscaleHandoverHold type="IntegerField">
+                <Default>45</Default>
+                <MinimumValue>5</MinimumValue>
+                <MaximumValue>600</MaximumValue>
+                <Required>Y</Required>
+            </tailscaleHandoverHold>
+        </general>
+        <!-- local: this node only, never part of HA config sync -->
+        <local>
+            <jumboMtuInterfaces type="CSVListField">
+                <Mask>/^[a-z][a-z0-9_.]{0,30}$/</Mask>
+                <MaskPerItem>Y</MaskPerItem>
+                <ValidationMessage>Use device names such as vtnet1 or vtnet1_vlan12.</ValidationMessage>
+            </jumboMtuInterfaces>
+            <jumboMtu type="IntegerField">
+                <Default>9000</Default>
+                <MinimumValue>1280</MinimumValue>
+                <MaximumValue>9216</MaximumValue>
+                <Required>Y</Required>
+            </jumboMtu>
+        </local>
+    </items>
+</model>

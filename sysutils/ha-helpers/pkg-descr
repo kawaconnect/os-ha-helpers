@@ -1,0 +1,23 @@
+Helpers that make an OPNsense CARP pair fail over cleanly:
+
+* Keep the kernel default route on a reachable upstream gateway on both
+  nodes, and give the backup node internet access through the master.
+* Restart Unbound on takeover so the new master does not answer from
+  failures it cached as backup.
+* Run selected services (UPnP, mDNS relay, ...) on the master only.
+* Hand Tailscale subnet routes from the backup to the master.
+* Set pfsync maxupd and jumbo MTUs at boot.
+
+A WAN with a single DHCP address on a CARP VIP needs os-carp-vip-dhcp by
+Tore Amundsen (BSD-2-Clause, not in the OPNsense repositories), which keeps
+the DHCP lease on the CARP VIP so the address fails over with it. Install it
+separately; this plugin works with it unmodified.
+
+WWW: https://github.com/kawaconnect/opnsense-ha
+
+Plugin Changelog
+================
+
+1.0
+
+* Initial release, ported from the opnsense-ha script kit

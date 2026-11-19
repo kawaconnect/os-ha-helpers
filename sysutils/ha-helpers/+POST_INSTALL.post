@@ -1,0 +1,59 @@
+# Copyright (C) 2026 KawaConnect LLC
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+# AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+# OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# Upgrade from the opnsense-ha shell script kit: its settings were imported
+# from /usr/local/etc/kc-ha.conf by the model migration that ran above. Archive
+# the kit's loose files (for a rollback) and remove them, so two sets of hooks
+# never manage the same routes and services.
+LEGACY="/usr/local/sbin/kc-ha-lib /usr/local/sbin/kc-ha-egress /usr/local/sbin/kc-unbound-master
+/usr/local/sbin/kc-ha-master-services /usr/local/sbin/kc-ha-status /usr/local/sbin/kc-ha-tailscale-primary
+/usr/local/sbin/ha-master-services
+/usr/local/etc/rc.syshook.d/carp/10-kc-ha-egress /usr/local/etc/rc.syshook.d/carp/20-kc-unbound-master
+/usr/local/etc/rc.syshook.d/carp/30-kc-ha-master-services /usr/local/etc/rc.syshook.d/carp/60-kc-ha-tailscale
+/usr/local/etc/rc.syshook.d/carp/30-ha-master-services
+/usr/local/etc/rc.syshook.d/start/95-pfsync-maxupd /usr/local/etc/rc.syshook.d/start/96-kc-ha-egress
+/usr/local/etc/rc.syshook.d/start/97-kc-jumbo-mtu /usr/local/etc/rc.syshook.d/start/98-kc-ha-master-services
+/usr/local/etc/rc.syshook.d/start/98-ha-master-services
+/etc/cron.d/kc-ha-master-services /etc/cron.d/kc-ha-tailscale-primary /etc/cron.d/ha-master-services
+/usr/local/etc/kc-ha.conf /usr/local/etc/kc-ha.conf.sample /usr/local/etc/kc-ha.version"
+FOUND=""
+for FILE in ${LEGACY}; do
+    [ -f "${FILE}" ] && FOUND="${FOUND} ${FILE#/}"
+done
+if [ -n "${FOUND}" ]; then
+    ARCHIVE="/var/backups/ha-helpers-legacy-$(date +%Y%m%d%H%M%S).tar"
+    mkdir -p /var/backups
+    if tar -cpf "${ARCHIVE}" -C / ${FOUND}; then
+        chmod 600 "${ARCHIVE}"
+        for FILE in ${FOUND}; do
+            rm -f "/${FILE}"
+        done
+        echo "ha-helpers: replaced the opnsense-ha script kit; its files are in ${ARCHIVE}"
+    else
+        echo "ha-helpers: could not archive the opnsense-ha script kit files, left them in place" >&2
+    fi
+fi
+
+# apply the settings now (routes, master-only services, cron jobs)
+/usr/local/sbin/configctl hahelpers start > /dev/null
