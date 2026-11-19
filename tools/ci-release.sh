@@ -30,6 +30,16 @@
 #                                 release key from the CI variable HA_SIGNING_KEY
 #   tools/ci-release.sh publish   upload dist/ to the generic package registry and
 #                                 create the GitLab release with the three files as assets
+#   tools/ci-release.sh github    create the same release on GitHub (GITHUB_RELEASE_REPO,
+#                                 default kawaconnect/os-ha-helpers) with the three files
+#                                 attached, once the push mirror has carried the tag there
+#
+# GITHUB_RELEASE_TOKEN: protected, masked and hidden file variable, environment scope
+# "github-release", holding a fine-grained GitHub token for that one repository with
+# Contents read/write (1Password Automation "GitHub os-ha-helpers release token").
+# Without it the github step exits 3 (a warning in the pipeline, the GitLab release stands).
+# The same step runs by hand: CI_COMMIT_TAG=vX.Y.Z CI_COMMIT_SHA=<commit>
+# GITHUB_RELEASE_TOKEN=<token file> tools/ci-release.sh github, with the signed files in dist/.
 #
 # HA_SIGNING_KEY is a protected, masked and hidden file variable, environment scope
 # "release": a file holding the base64 of the PEM private key (1Password Automation,
@@ -56,6 +66,8 @@ tagver() {
     grep -q "^## \[$v\]" CHANGELOG.md || { echo "CHANGELOG.md has no section [$v]" >&2; exit 1; }
     echo "$v"
 }
+
+sha() { if command -v sha256 >/dev/null 2>&1; then sha256 -q "$1"; else sha256sum "$1" | cut -d' ' -f1; fi; }
 
 notes() {
     awk -v v="$1" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md
@@ -108,6 +120,72 @@ publish)
     esac
     rm -f /tmp/ha-release.$$
     ;;
+github)
+    v=$(tagver)
+    pkg=$(pkgfile)
+    base=$(basename "$pkg")
+    pver=${base#os-ha-helpers-}; pver=${pver%.pkg}
+    [ -f "$dist/SHA256SUMS" ] && [ -f "$dist/SHA256SUMS.sig" ] || { echo "dist/ is not signed" >&2; exit 1; }
+    [ "$(sha "$pkg")" = "$(sed -n 's/^\([0-9a-f]*\)  .*/\1/p' "$dist/SHA256SUMS")" ] || { echo "SHA256SUMS does not match the package" >&2; exit 1; }
+    if [ -z "${GITHUB_RELEASE_TOKEN:-}" ] || [ ! -s "$GITHUB_RELEASE_TOKEN" ]; then
+        echo "GITHUB_RELEASE_TOKEN is not available: GitHub release not published" >&2; exit 3
+    fi
+    repo=${GITHUB_RELEASE_REPO:-kawaconnect/os-ha-helpers}
+    case "$repo" in *[!A-Za-z0-9/._-]*) echo "unsafe repo name" >&2; exit 2 ;; esac
+    gh=https://api.github.com/repos/$repo
+    tmp=$(mktemp -d /tmp/ha-gh.XXXXXXXX)
+    trap 'rm -rf "$tmp"' EXIT INT TERM
+    umask 077
+    printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\nX-GitHub-Api-Version: 2022-11-28\n' "$(tr -d '\r\n' < "$GITHUB_RELEASE_TOKEN")" > "$tmp/h"
+    ghc() { curl -sS -H @"$tmp/h" "$@"; }
+    # the push mirror carries the tag; wait for it (up to 15 minutes) and check it is this commit
+    i=0
+    while :; do
+        ghc -o "$tmp/ref" "$gh/git/ref/tags/$CI_COMMIT_TAG" || true
+        obj=$(jq -r '.object.sha // empty' "$tmp/ref" 2>/dev/null)
+        if [ -n "$obj" ]; then
+            if [ "$(jq -r .object.type "$tmp/ref")" = tag ]; then
+                ghc -o "$tmp/tag" "$gh/git/tags/$obj"; obj=$(jq -r .object.sha "$tmp/tag")
+            fi
+            break
+        fi
+        i=$((i + 1)); [ $i -lt 90 ] || { echo "tag $CI_COMMIT_TAG did not reach GitHub within 15 minutes" >&2; exit 1; }
+        sleep 10
+    done
+    [ "$obj" = "$CI_COMMIT_SHA" ] || { echo "GitHub tag $CI_COMMIT_TAG is $obj, not $CI_COMMIT_SHA" >&2; exit 1; }
+    code=$(ghc -o "$tmp/rel" -w '%{http_code}' "$gh/releases/tags/$CI_COMMIT_TAG")
+    if [ "$code" = 404 ]; then
+        notes "$v" | jq -Rs --arg tag "$CI_COMMIT_TAG" --arg name "$CI_COMMIT_TAG (os-ha-helpers $pver)" --arg pv "$pver" \
+            '{tag_name: $tag, name: $name, draft: false, prerelease: false, make_latest: "true",
+              body: ("Package os-ha-helpers " + $pv + ", built and signed by GitLab CI. Verify with keys/release.pub from the repository (fingerprint pinned in tools/install.sh), never with a key downloaded next to the package.\n" + .)}' > "$tmp/body"
+        code=$(ghc -o "$tmp/rel" -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data @"$tmp/body" "$gh/releases")
+        [ "$code" = 201 ] || { cat "$tmp/rel" >&2; echo "GitHub release creation failed ($code)" >&2; exit 1; }
+        echo "GitHub release $CI_COMMIT_TAG created"
+    elif [ "$code" != 200 ]; then
+        cat "$tmp/rel" >&2; echo "GitHub release lookup failed ($code)" >&2; exit 1
+    fi
+    id=$(jq -r .id "$tmp/rel")
+    for f in "$base" SHA256SUMS SHA256SUMS.sig; do
+        have=$(jq -r --arg n "$f" '.assets[] | select(.name == $n) | .digest // "present"' "$tmp/rel")
+        if [ -n "$have" ]; then
+            # no digest in the API answer: the download check below compares the content
+            [ "$have" = present ] || [ "$have" = "sha256:$(sha "$dist/$f")" ] || { echo "GitHub asset $f exists with another content ($have)" >&2; exit 1; }
+            echo "asset $f already there"; continue
+        fi
+        code=$(ghc -o "$tmp/up" -w '%{http_code}' -X POST -H 'Content-Type: application/octet-stream' \
+            --data-binary @"$dist/$f" "https://uploads.github.com/repos/$repo/releases/$id/assets?name=$f")
+        [ "$code" = 201 ] || { cat "$tmp/up" >&2; echo "upload of $f failed ($code)" >&2; exit 1; }
+        echo "uploaded $f"
+    done
+    # check what anyone downloads, without a token
+    ghc -o "$tmp/rel" "$gh/releases/$id"
+    for f in "$base" SHA256SUMS SHA256SUMS.sig; do
+        url=$(jq -r --arg n "$f" '.assets[] | select(.name == $n) | .browser_download_url' "$tmp/rel")
+        curl -sSfL -o "$tmp/dl" "$url"
+        [ "$(sha "$tmp/dl")" = "$(sha "$dist/$f")" ] || { echo "downloaded $f differs from dist/$f" >&2; exit 1; }
+    done
+    echo "GitHub release $CI_COMMIT_TAG: 3 assets, downloads match dist/"
+    ;;
 *)
-    echo "usage: $0 sign|publish" >&2; exit 2 ;;
+    echo "usage: $0 sign|publish|github" >&2; exit 2 ;;
 esac

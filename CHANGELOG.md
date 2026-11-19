@@ -9,6 +9,12 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 ### Changed
 - Repository renamed `opnsense-ha` -> `os-ha-helpers` on GitLab and GitHub (old URLs redirect);
   `tools/install.sh` reads releases from `dean/os-ha-helpers`, `pkg-descr` WWW points at the new GitHub URL.
+- `tools/install.sh` installs from the GitHub releases of kawaconnect/os-ha-helpers by default (no token);
+  `HA_RELEASE_SOURCE=gitlab` keeps the GitLab route.
+
+### Added
+- CI job `github`: each `v*` release is also published as a GitHub release with the same three files,
+  through the GitHub API with a repository-scoped token (no GitHub Actions). v1.0.2 was published there too.
 
 ## [1.0.2] - 2026-11-19
 

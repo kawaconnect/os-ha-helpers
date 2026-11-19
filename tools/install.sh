@@ -39,9 +39,12 @@
 # /var/backups/ha-helpers-legacy-*.tar.
 #
 # Where os-ha-helpers comes from:
-#   default              the latest GitLab release of this repository (built and
-#                        signed by CI): the .pkg, SHA256SUMS and SHA256SUMS.sig assets
+#   default              the latest GitHub release of github.com/kawaconnect/os-ha-helpers
+#                        (built and signed by GitLab CI; no token needed): the .pkg,
+#                        SHA256SUMS and SHA256SUMS.sig assets
 #   HA_RELEASE=vX.Y.Z    that release instead of the latest
+#   HA_RELEASE_SOURCE=gitlab  the GitLab release instead (private project: needs
+#                        HA_GITLAB_TOKEN_FILE)
 #   HA_PKG_DIR=<dir>     a local directory with the three files instead, e.g.
 #                        packages/os-ha-helpers (the hand-built 1.0_2) or a CI artifact
 # A release is verified exactly like a local directory: against keys/release.pub
@@ -51,8 +54,8 @@
 # Environment:
 #   HA_NO_CARPVIPDHCP=1  skip os-carp-vip-dhcp (no DHCP WAN)
 #   HA_SSH="..."         ssh command (default "ssh"), e.g. "ssh -J bastion"
-#   HA_RELEASE_API=...   GitLab project API (default
-#                        https://gitlab.kawalink.com/api/v4/projects/dean%2Fos-ha-helpers)
+#   HA_RELEASE_API=...   release API base (default https://api.github.com/repos/kawaconnect/os-ha-helpers,
+#                        or https://gitlab.kawalink.com/api/v4/projects/dean%2Fos-ha-helpers for gitlab)
 #   HA_GITLAB_TOKEN_FILE file holding a GitLab token with read_api (the project is
 #                        private); not needed for a public project
 set -eu
@@ -108,25 +111,37 @@ install_pkg() {
 
 # fetch_release <dir>: download the os-ha-helpers release assets into <dir>
 fetch_release() {
-    _api=${HA_RELEASE_API:-https://gitlab.kawalink.com/api/v4/projects/dean%2Fos-ha-helpers}
+    _src=${HA_RELEASE_SOURCE:-github}
     _rel=${HA_RELEASE:-latest}
-    case "$_rel" in latest) _rel=permalink/latest ;; v[0-9]*) ;; *) echo "HA_RELEASE must be latest or vX.Y.Z" >&2; return 1 ;; esac
-    case "$_rel" in *[!A-Za-z0-9/._-]*) echo "unsafe HA_RELEASE" >&2; return 1 ;; esac
+    case "$_rel" in latest) ;; v[0-9]*) ;; *) echo "HA_RELEASE must be latest or vX.Y.Z" >&2; return 1 ;; esac
+    case "$_rel" in *[!A-Za-z0-9._-]*) echo "unsafe HA_RELEASE" >&2; return 1 ;; esac
     _hdr=$1/.hdr; : > "$_hdr"; chmod 600 "$_hdr"
-    if [ -n "${HA_GITLAB_TOKEN_FILE:-}" ]; then
-        printf 'PRIVATE-TOKEN: %s\n' "$(cat "$HA_GITLAB_TOKEN_FILE")" > "$_hdr"
-    fi
-    curl -sSfL -H @"$_hdr" -o "$1/release.json" "$_api/releases/$_rel" || { rm -f "$_hdr"; echo "cannot read release $_rel from $_api (token? HA_GITLAB_TOKEN_FILE)" >&2; return 1; }
+    case "$_src" in
+    github)
+        _api=${HA_RELEASE_API:-https://api.github.com/repos/kawaconnect/os-ha-helpers}
+        case "$_rel" in latest) _path=releases/latest ;; *) _path=releases/tags/$_rel ;; esac
+        _key=browser_download_url ;;
+    gitlab)
+        _api=${HA_RELEASE_API:-https://gitlab.kawalink.com/api/v4/projects/dean%2Fos-ha-helpers}
+        case "$_rel" in latest) _path=releases/permalink/latest ;; *) _path=releases/$_rel ;; esac
+        _key=url
+        if [ -n "${HA_GITLAB_TOKEN_FILE:-}" ]; then
+            printf 'PRIVATE-TOKEN: %s\n' "$(cat "$HA_GITLAB_TOKEN_FILE")" > "$_hdr"
+        fi ;;
+    *) echo "HA_RELEASE_SOURCE must be github or gitlab" >&2; return 1 ;;
+    esac
+    curl -sSfL -H @"$_hdr" -o "$1/release.json" "$_api/$_path" || { rm -f "$_hdr"; echo "cannot read release $_rel from $_api" >&2; return 1; }
     _n=0
-    for _url in $(tr ',' '\n' < "$1/release.json" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p'); do
+    for _url in $(tr ',' '\n' < "$1/release.json" | sed -n "s/.*\"$_key\": *\"\([^\"]*\)\".*/\1/p"); do
         _f=${_url##*/}
         case "$_f" in os-ha-helpers-*.pkg|SHA256SUMS|SHA256SUMS.sig) ;; *) continue ;; esac
+        [ -e "$1/$_f" ] && continue
         curl -sSfL -H @"$_hdr" -o "$1/$_f" "$_url" || { rm -f "$_hdr"; echo "download of $_f failed" >&2; return 1; }
         _n=$((_n + 1))
     done
     rm -f "$_hdr" "$1/release.json"
     [ "$_n" -eq 3 ] || { echo "release $_rel does not have the three assets (.pkg, SHA256SUMS, SHA256SUMS.sig)" >&2; return 1; }
-    echo "downloaded release ${HA_RELEASE:-latest}: $(ls "$1"/*.pkg | xargs -n1 basename)" >&2
+    echo "downloaded $_src release $_rel: $(ls "$1"/*.pkg | xargs -n1 basename)" >&2
 }
 
 if [ -n "${HA_PKG_DIR:-}" ]; then
