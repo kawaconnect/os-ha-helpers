@@ -6,7 +6,9 @@
 # KC_HA_SSH overrides the ssh command (default "ssh"), as in install.sh.
 set -u
 SSH=${KC_HA_SSH:-ssh}
-[ $# -eq 2 ] || { echo "usage: $0 root@<node-a> root@<node-b>"; exit 2; }
+[ $# -eq 2 ] || { echo "usage: $0 root@<node-a> root@<node-b>   (read-only; exit 0 = ALL OK, 1 = FAIL lines, 2 = could not check)"; exit 2; }
+# md5 of a local file: md5sum (Linux) or md5 (macOS, BSD)
+lmd5() { if command -v md5sum >/dev/null 2>&1; then md5sum "$1" | cut -d' ' -f1; else md5 -q "$1"; fi; }
 here=$(cd "$(dirname "$0")" && pwd)
 version=$(cd "$here" && git describe --always --dirty 2>/dev/null || cat "$here/VERSION" 2>/dev/null || echo unknown)
 plugdir=${KC_HA_PLUGIN_DIR:-$here/plugins/os-carp-vip-dhcp}
@@ -89,7 +91,7 @@ for n in A B; do
         [ "$(get keepers "$D")" -ge 1 ] 2>/dev/null && ok "$(get keepers "$D") keeper(s) configured" || fail "no keeper configured"
     fi
     for f in $(cd "$here/files" && find usr etc -type f | sort); do
-        want=$(md5sum "$here/files/$f" | cut -d' ' -f1); have=$(get "md5:/$f" "$D")
+        want=$(lmd5 "$here/files/$f"); have=$(get "md5:/$f" "$D")
         [ "$want" = "$have" ] && ok "/$f" || fail "/$f differs from repo ($have)"
     done
     [ -n "$(get conf "$D")" ] && ok "kc-ha.conf: $(get conf "$D")" || fail "no /usr/local/etc/kc-ha.conf"

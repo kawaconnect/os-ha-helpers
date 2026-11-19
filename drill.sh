@@ -16,6 +16,10 @@
 #   4. Reports losses per phase (failover / hold / failback) and the hook log lines.
 # Arguments left out are taken from the master's kc-ha.conf: DRILL_HOLD,
 # DRILL_PROBE_IP, DRILL_HTTPS_URL, plus DRILL_DEMOTION and DRILL_DNS_NAME.
+#
+# This fails the pair over for real. On a terminal it asks before demoting the
+# master; KC_HA_YES=1 (or no terminal on stdin) skips the question.
+# Needs on this host: ping, dig, curl 7.84 or newer (--rate), GNU date.
 set -u
 SSH=${KC_HA_SSH:-ssh}   # override the ssh command as in install.sh
 [ $# -ge 2 ] || { echo "usage: $0 root@<master> root@<backup> [hold] [probe-ip] [dns-vip] [https-url]"; exit 2; }
@@ -31,6 +35,9 @@ g() { printf '%s\n' "$2" | sed -n "s/^$1=//p"; }
 [ -n "$URL" ] || URL=$(g cfg:DRILL_HTTPS_URL "$SM"); [ -n "$DNSV" ] || DNSV=$(g vip "$SM")
 DEM=$(g cfg:DRILL_DEMOTION "$SM"); DNSN=$(g cfg:DRILL_DNS_NAME "$SM")
 [ -n "$HOLD" ] && [ -n "$PIP" ] && [ -n "$URL" ] && [ -n "$DEM" ] && [ -n "$DNSN" ] || { echo "  could not read DRILL_* settings from $M (kc-ha-status --kv); is the kit installed?"; exit 1; }
+# both end up in a root command line on the master
+case "$HOLD$DEM" in *[!0-9]*) echo "  hold ('$HOLD') and DRILL_DEMOTION ('$DEM') must be whole numbers"; exit 2 ;; esac
+for c in ping dig curl; do command -v $c >/dev/null 2>&1 || { echo "  $c is needed on this host for the probes"; exit 2; }; done
 bad=0
 [ "$(g backups "$SM")" = 0 ] && [ "$(g masters "$SM")" -gt 0 ] || { echo "  $M is not MASTER on all VIPs ($(g masters "$SM")/$(g backups "$SM"))"; bad=1; }
 [ "$(g masters "$SB")" = 0 ] && [ "$(g backups "$SB")" -gt 0 ] || { echo "  $B is not BACKUP on all VIPs ($(g masters "$SB")/$(g backups "$SB"))"; bad=1; }
@@ -39,6 +46,10 @@ case "$(g pfsync "$SM")$(g pfsync "$SB")" in *syncok=0*) echo "  pfsync syncok=0
 [ $bad = 0 ] || { echo "aborting"; exit 1; }
 echo "  master $(g host "$SM") $(g masters "$SM") VIPs, backup $(g host "$SB") $(g backups "$SB") VIPs, states $(g states "$SM")/$(g states "$SB"), hold ${HOLD}s"
 echo "  probes: ping $PIP, dns @$DNSV, https $URL"
+if [ -z "${KC_HA_YES:-}" ] && [ -t 0 ]; then
+    printf 'This demotes %s for %ss: the pair fails over and back. Type yes to go on: ' "$(g host "$SM")" "$HOLD"
+    read -r answer; [ "$answer" = yes ] || { echo "nothing changed"; exit 1; }
+fi
 
 echo "== probes start $(date +%T)"
 T0=$(date +%s)
@@ -52,7 +63,6 @@ echo "== failover $(date +%T) (+$(( $(date +%s) - T0 ))s): demoting $M for ${HOL
 $SSH "$M" "daemon -f sh -c 'sysctl net.inet.carp.demotion=$DEM; sleep $HOLD; sysctl net.inet.carp.demotion=-$DEM'"
 TF=$(date +%s)
 sleep $((HOLD + 20))
-TB=$((TF + HOLD))
 wait $P1 2>/dev/null; kill $P2 $P4 2>/dev/null; wait 2>/dev/null
 echo "== probes end $(date +%T)"
 
@@ -65,6 +75,6 @@ echo "== state after"
 SM=$(st "$M"); SB=$(st "$B")
 echo "  $(g host "$SM"): $(g masters "$SM") MASTER / $(g backups "$SM") BACKUP, demotion $(g demotion "$SM"), egress '$(g egress "$SM")', default $(g default "$SM")"
 echo "  $(g host "$SB"): $(g masters "$SB") MASTER / $(g backups "$SB") BACKUP, demotion $(g demotion "$SB"), egress '$(g egress "$SB")', default $(g default "$SB")"
-echo "== hook log (both nodes, since drill start)"
-for h in "$M" "$B"; do $SSH "$h" "grep -h -E 'kc-ha-egress|kc-ha-dns|kc-ha-services|carp: [0-9]+@[^ ]*: (BACKUP -> MASTER|MASTER -> BACKUP)' \`ls -t /var/log/system/system_*.log | head -1\` | awk -v t=\"$(date -u -d @$T0 +%Y-%m-%dT%H:%M 2>/dev/null)\" '1' | tail -8 | cut -c1-150"; done
+echo "== hook log (last lines on both nodes)"
+for h in "$M" "$B"; do $SSH "$h" "grep -h -E 'kc-ha-egress|kc-ha-dns|kc-ha-services|carp: [0-9]+@[^ ]*: (BACKUP -> MASTER|MASTER -> BACKUP)' \`ls -t /var/log/system/system_*.log | head -1\` | tail -8 | cut -c1-150"; done
 [ "$(g masters "$SM")" -gt 0 ] && [ "$(g backups "$SM")" = 0 ] && [ "$(g masters "$SB")" = 0 ] && echo "DRILL OK: failed over and back" || { echo "DRILL: pair not back in the expected state"; exit 1; }

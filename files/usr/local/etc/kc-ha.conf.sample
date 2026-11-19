@@ -112,5 +112,5 @@ DRILL_HTTPS_URL=https://www.google.com/generate_204
 # hand them over by stopping tailscaled for TAILSCALE_HANDOVER_HOLD seconds, only
 # when the other node is online in the tailnet. List the Tailscale host names of
 # both nodes; leave empty to turn it off.
-#TAILSCALE_NODES="fw-a fw-b"
+#TAILSCALE_NODES="fw1 fw2"
 #TAILSCALE_HANDOVER_HOLD=45

@@ -40,8 +40,19 @@ if [ "${peer:-0}" -eq 0 ]; then
     exit 0
 fi
 logger -t kc-ha-tailscale "BACKUP holds the Tailscale LAN routes; handing them to the master"
+# tailscaled is started again even if this script is interrupted during the
+# hold: it may be the only way in to this node
+ts_start() { /usr/sbin/service tailscaled start >/dev/null 2>&1; }
+trap ts_start EXIT
+trap 'exit 1' HUP INT TERM
 /usr/sbin/service tailscaled stop >/dev/null 2>&1
 sleep "$TAILSCALE_HANDOVER_HOLD"
-/usr/sbin/service tailscaled start >/dev/null 2>&1
-logger -t kc-ha-tailscale "BACKUP: tailscaled back up without the primary routes"
+trap - EXIT
+ts_start
+if /usr/sbin/service tailscaled status >/dev/null 2>&1; then
+    logger -t kc-ha-tailscale "BACKUP: tailscaled back up without the primary routes"
+else
+    logger -p daemon.err -t kc-ha-tailscale "BACKUP: tailscaled did NOT come back after the handover (service tailscaled start)"
+    exit 1
+fi
 exit 0

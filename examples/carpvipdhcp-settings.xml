@@ -19,7 +19,7 @@
       <backupEgressGateway />
       <backupEgressInterface />
       <backupEgressPrefixes />
-      <description>WAN1 (Verizon Fios, dynamic) public address on CARP vhid 221</description>
+      <description>WAN1 (DHCP from the ISP) public address on CARP vhid 221</description>
     </keeper>
   </keepers>
 </CarpVipDhcp>
