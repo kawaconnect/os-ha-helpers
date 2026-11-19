@@ -1,0 +1,149 @@
+#!/bin/sh
+#
+# Copyright (C) 2026 KawaConnect LLC
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+# AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+# OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# ha-helpers: keep forwarding usable the instant this node becomes CARP MASTER, and
+# give the CARP BACKUP node internet via the current master.
+#
+# Why: gateway monitoring (dpinger) can only probe through the CARP VIPs, so on
+# the BACKUP node every WAN gateway always reads "down" and OPNsense installs no
+# default route (or a LAN one). A takeover would then forward nothing until the
+# monitors recover (tens of seconds). We pin the kernel default route to a
+# reachable upstream gateway on both roles; OPNsense re-evaluates it as soon as
+# the monitors come up and keeps failing over between WANs on its own.
+#
+# Upstream candidates come from the config (lib.sh): enabled, upstream
+# IPv4 gateways by priority. On MASTER the first one that answers a ping is
+# used, so a dead primary WAN is not pinned during a takeover; on BACKUP nothing
+# can be probed, so the first by priority is used - its 0/1 + 128/1 routes via
+# the master's VIP take precedence anyway. Adding WAN3/WAN4 needs no change
+# here: mark the gateway upstream, give it a priority.
+#
+# The default route is bound to the gateway's WAN device via a host route. With
+# node addresses from a private /29 the gateway is off-link, and a bare
+# `route add default` issued while the /1 routes exist resolves through them and
+# lands on the LAN device (field report 2026-10-12: black hole after takeover).
+# A default route on the wrong device is therefore re-pinned too.
+#
+# "Usable default route" = its gateway is one of the configured upstream
+# gateways and it sits on that gateway's device. A configured upstream gateway
+# may be a private address (a CPE or cellular router LAN, e.g. 192.168.4.1): it
+# is left alone, so a WAN failover OPNsense has already made is not undone by a
+# CARP event. Only a default route that is missing, or points at an address that
+# is not a configured gateway and is private/link-local (the LAN VIP, a leftover),
+# is treated as unusable (the address patterns are UNUSABLE_DEFAULT_GWS). A
+# gateway outside those patterns that is not in the list (a dynamic DHCP gateway)
+# is left alone as before.
+#
+# BACKUP: additionally route 0/1 + 128/1 via the master's LAN VIP so this
+# node's own traffic (updates, CrowdSec, NTP) works; removed on MASTER.
+# Reads the real CARP role rather than trusting hook arguments. Idempotent.
+# Serialised with lockf: one CARP transition fires this once per VIP.
+#
+# Usage: egress.sh [--dry-run|--show]
+#
+# Settings (lib.sh names): VHID, BACKUP_EGRESS (the /1 routes), PIN_DEFAULT_ROUTE,
+# UNUSABLE_DEFAULT_GWS, GW_PING_TIMEOUT_MS, LOCK_TIMEOUT.
+. /usr/local/opnsense/scripts/OPNsense/HaHelpers/lib.sh
+LOCK=/var/run/hahelpers-egress.lock
+DRY=0; case "${1:-}" in --dry-run|--show) DRY=1 ;; esac
+if [ "$DRY" = 0 ] && [ -z "${HAHELPERS_LOCKED:-}" ]; then
+    HAHELPERS_LOCKED=1 exec /usr/bin/lockf -t "$LOCK_TIMEOUT" "$LOCK" /bin/sh "$0" "$@"
+fi
+# fd 3 = the terminal: the route commands below silence stdout/stderr, and the
+# dry run must still show every command it would have executed
+exec 3>&1
+log() { [ "$DRY" = 1 ] && echo "$*" >&3 || /usr/bin/logger -t hahelpers-egress "$*"; }
+run() { [ "$DRY" = 1 ] && echo "+ $*" >&3 || "$@"; }
+
+ha_load
+if [ -z "$VHID" ]; then
+    log "the helpers are disabled or have no VHID; nothing to do"; exit 0
+fi
+if [ -z "$VIP" ] || [ -z "$IF" ]; then
+    log "no CARP VIP with vhid $VHID in config; nothing to do"; exit 0
+fi
+role=$(ha_role)
+have=$(/usr/bin/netstat -rn -f inet | awk '$1=="0.0.0.0/1"||$1=="128.0.0.0/1"' | wc -l | tr -d ' ')
+defroute=$(ha_default_route)   # gateway@device, empty if none
+curdef=${HAHELPERS_TEST_DEF-${defroute%@*}}   # HAHELPERS_TEST_DEF/DEV: test hooks for --dry-run
+curdev=${HAHELPERS_TEST_DEV-${defroute#*@}}
+
+if [ "${1:-}" = "--show" ]; then
+    echo "role=$role vip=$VIP if=$IF vhid=$VHID peer=$PEER uptime=$(ha_uptime)s egress_routes=$have default=${curdef:-none}@${curdev:-none} upstream_by_priority=[$GWS]"
+    echo "  settings: backup_egress=$BACKUP_EGRESS pin_default_route=$PIN_DEFAULT_ROUTE unusable_default_gws=[$UNUSABLE_DEFAULT_GWS]"
+    for g in $GWS; do /sbin/ping -q -c 1 -W "$GW_PING_TIMEOUT_MS" "${g%@*}" >/dev/null 2>&1 && echo "  ${g%@*} (${g#*@}) answers ping" || echo "  ${g%@*} (${g#*@}) no ping reply"; done
+    exit 0
+fi
+
+want_egress=no; [ "$role" = BACKUP ] && ha_on "$BACKUP_EGRESS" && want_egress=yes
+case "$want_egress" in
+    yes)
+        if [ "$have" != 2 ]; then
+            run /sbin/route -q delete -net 0.0.0.0/1 >/dev/null 2>&1
+            run /sbin/route -q delete -net 128.0.0.0/1 >/dev/null 2>&1
+            run /sbin/route -q add -net 0.0.0.0/1 "$VIP" && run /sbin/route -q add -net 128.0.0.0/1 "$VIP"
+            log "BACKUP: egress via $VIP installed"
+        fi ;;
+    *)
+        if [ "$have" != 0 ]; then
+            run /sbin/route -q delete -net 0.0.0.0/1 >/dev/null 2>&1
+            run /sbin/route -q delete -net 128.0.0.0/1 >/dev/null 2>&1
+            log "${role:-no-carp}: egress routes removed"
+        fi ;;
+esac
+
+# Decide whether the default route needs (re)pinning.
+ha_on "$PIN_DEFAULT_ROUTE" || exit 0
+repin=no
+if [ -n "$curdef" ] && ha_gw_known "$curdef"; then
+    # a configured upstream gateway (public or private): only the device can be wrong
+    want=$(ha_gw_dev "$curdef")
+    [ -n "$want" ] && [ "$curdev" != "$want" ] && repin=yes
+else
+    ha_gw_unusable "$curdef" && repin=yes
+fi
+[ "$repin" = yes ] || exit 0
+
+pick=""
+if [ "$role" = MASTER ]; then
+    for g in $GWS; do
+        if ha_gw_alive "${g%@*}"; then pick=$g; break; fi
+    done
+    [ -z "$pick" ] && [ -n "$GWS" ] && log "MASTER: no upstream gateway answered ping, using first by priority"
+fi
+[ -z "$pick" ] && pick=${GWS%% *}
+[ -n "$pick" ] || exit 0
+gw=${pick%@*}; dev=${pick#*@}
+run /sbin/route -q delete default >/dev/null 2>&1
+if [ -n "$dev" ]; then
+    # bind the gateway to its WAN device first so the default route cannot
+    # resolve through the backup-egress /1 routes
+    run /sbin/route -q delete -host "$gw" >/dev/null 2>&1
+    run /sbin/route -q add -host "$gw" -iface "$dev" >/dev/null 2>&1
+fi
+run /sbin/route -q add default "$gw" >/dev/null 2>&1
+log "${role:-no-carp}: default route was '${curdef:-none}' on '${curdev:-none}', pinned to $gw on ${dev:-auto}"
+exit 0

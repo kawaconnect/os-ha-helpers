@@ -1,5 +1,0 @@
-#!/bin/sh
-# boot -> reconcile master-only services after SERVICES_BOOT_DELAY
-. /usr/local/sbin/kc-ha-lib
-( sleep "$SERVICES_BOOT_DELAY"; /usr/local/sbin/kc-ha-master-services ) >/dev/null 2>&1 &
-exit 0

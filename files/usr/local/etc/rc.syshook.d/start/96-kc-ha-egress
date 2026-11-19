@@ -1,4 +1,0 @@
-#!/bin/sh
-# boot -> reconcile backup egress (after EGRESS_HOOK_DELAY, so the role has settled)
-. /usr/local/sbin/kc-ha-lib
-( sleep "$EGRESS_HOOK_DELAY"; /usr/local/sbin/kc-ha-egress ) >/dev/null 2>&1 &

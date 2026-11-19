@@ -1,0 +1,230 @@
+<!--
+    Copyright (C) 2026 KawaConnect LLC
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    1. Redistributions of source code must retain the above copyright notice,
+       this list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in the
+       documentation and/or other materials provided with the distribution.
+
+    THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+    INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+    AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+    AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+    OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+-->
+<form>
+    <field>
+        <type>header</type>
+        <label>General</label>
+    </field>
+    <field>
+        <id>hahelpers.general.enabled</id>
+        <label>Enable</label>
+        <type>checkbox</type>
+        <help>Run the CARP failover helpers on this node. The same settings belong on both nodes; HA sync carries them when "CARP failover helpers" is ticked in the sync settings.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.vhid</id>
+        <label>Reference VHID</label>
+        <type>text</type>
+        <help>VHID of the LAN-side CARP address that defines the role of this node. The backup node reaches the master through this address. Nothing happens until it is set.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.bootGrace</id>
+        <label>Boot grace</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds after boot during which a MASTER event is not trusted while the pfsync peer still answers: a booting node can time out to MASTER before it hears the real master.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>Routing</label>
+    </field>
+    <field>
+        <id>hahelpers.general.backupEgress</id>
+        <label>Backup egress</label>
+        <type>checkbox</type>
+        <help>On the BACKUP node, route 0.0.0.0/1 and 128.0.0.0/1 through the master's CARP address so the node itself has internet (updates, NTP, blocklists).</help>
+    </field>
+    <field>
+        <id>hahelpers.general.pinDefaultRoute</id>
+        <label>Pin default route</label>
+        <type>checkbox</type>
+        <help>Keep the kernel default route on a usable upstream gateway and on that gateway's device, on both roles. Gateway monitoring cannot probe through the CARP addresses on a backup, so OPNsense may leave no default route there; a takeover would then forward nothing until the monitors recover.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.unusableDefaultGws</id>
+        <label>Unusable default gateways</label>
+        <type>select_multiple</type>
+        <style>tokenize</style>
+        <allownew>true</allownew>
+        <advanced>true</advanced>
+        <help>Address patterns (shell wildcards) of a default gateway that is not one of the configured upstream gateways and must be re-pinned, for example a LAN address left behind. A configured upstream gateway is always accepted, even a private one.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.gwPingTimeout</id>
+        <label>Gateway ping timeout</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Milliseconds to wait for an upstream gateway to answer when picking one on a new master.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.peerPingTimeout</id>
+        <label>Peer ping timeout</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Milliseconds to wait for the pfsync peer to answer on the sync link.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.egressHookDelay</id>
+        <label>Routing delay</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds a CARP or boot event waits before the routes are reconciled, so the role has settled.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.lockTimeout</id>
+        <label>Lock timeout</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds a run waits for an earlier run to finish: one CARP transition fires the hooks once per address.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>DNS</label>
+    </field>
+    <field>
+        <id>hahelpers.general.unboundRestart</id>
+        <label>Restart Unbound on takeover</label>
+        <type>checkbox</type>
+        <help>Restart Unbound when this node becomes MASTER of the reference address, so it drops upstream failures it cached as backup, then check that it resolves.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.dnsCheckName</id>
+        <label>Check name</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Name resolved to verify Unbound after the restart.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.dnsCheckServer</id>
+        <label>Check server</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Resolver queried for the check.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.dnsRestartTries</id>
+        <label>Restart attempts</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>How often Unbound is restarted when the check fails.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.dnsSettle</id>
+        <label>Settle time</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds to wait before the first restart, so the routes are in place.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.dnsRetryWait</id>
+        <label>Check delay</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds to wait after each restart before checking.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>Master-only services</label>
+    </field>
+    <field>
+        <id>hahelpers.general.masterOnlyServices</id>
+        <label>Services</label>
+        <type>select_multiple</type>
+        <style>tokenize</style>
+        <allownew>true</allownew>
+        <help>Services that must run on the master only, for example miniupnpd, udpbroadcastrelay or ddclient, by the name the service list uses. They are started on MASTER and stopped otherwise, on CARP events, at boot and every two minutes. Enable each service on both nodes.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.serviceSettle</id>
+        <label>Settle time</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds to wait after a start or stop before checking that it took.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.servicesHookDelay</id>
+        <label>Event delay</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds a CARP event waits before the services (and the Tailscale handover) are reconciled.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.servicesBootDelay</id>
+        <label>Boot delay</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds after boot before the services are reconciled.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>Tailscale</label>
+    </field>
+    <field>
+        <id>hahelpers.general.tailscaleNodes</id>
+        <label>Tailscale nodes</label>
+        <type>select_multiple</type>
+        <style>tokenize</style>
+        <allownew>true</allownew>
+        <help>Tailscale host names of both nodes when both advertise the same subnets. Tailscale keeps the routes on whichever node had them first; the backup then stops tailscaled for a moment so they move to the master. Empty turns this off. If Tailscale is the only way in to a node, keep another one.</help>
+    </field>
+    <field>
+        <id>hahelpers.general.tailscaleHandoverHold</id>
+        <label>Handover hold</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Seconds tailscaled stays stopped on the backup during a handover.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>pfsync</label>
+    </field>
+    <field>
+        <id>hahelpers.general.pfsyncMaxupd</id>
+        <label>pfsync maxupd</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>Value set on pfsync0 at boot (0 leaves pfsync alone). A low value keeps the standby state windows fresh so TCP connections survive a planned failover. Changing it on a running MASTER causes a short CARP flip, so it is applied there at the next boot only.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>This node only (not synchronised)</label>
+    </field>
+    <field>
+        <id>hahelpers.local.jumboMtuInterfaces</id>
+        <label>Jumbo MTU interfaces</label>
+        <type>select_multiple</type>
+        <style>tokenize</style>
+        <allownew>true</allownew>
+        <help>Devices forced to the jumbo MTU at boot, for example a disabled parent interface and the VLAN on it whose MTU OPNsense does not apply. A device that carries an upstream gateway is refused.</help>
+    </field>
+    <field>
+        <id>hahelpers.local.jumboMtu</id>
+        <label>Jumbo MTU</label>
+        <type>text</type>
+        <advanced>true</advanced>
+        <help>MTU set on those devices.</help>
+    </field>
+</form>

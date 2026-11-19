@@ -1,6 +1,0 @@
-#!/bin/sh
-# argv: <vhid>@<iface> <MASTER|BACKUP|INIT>. Every MASTER event is handed on with
-# its vhid; kc-unbound-master acts only for the reference VIP (VHID in
-# kc-ha.conf), so no vhid is written here and the file is the same on every site.
-case "$2" in MASTER) ( /usr/local/sbin/kc-unbound-master "$1" ) >/dev/null 2>&1 & ;; esac
-exit 0

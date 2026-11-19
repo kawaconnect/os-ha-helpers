@@ -1,11 +1,41 @@
 # Changelog
 
-Versions are git tags (`vX.Y.Z`); `install.sh` stamps the node with `git describe`.
+Versions are git tags (`vX.Y.Z`). From 1.0.0 the repository is the os-ha-helpers
+OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers/Makefile`
+(1.0.0 = package 1.0). 0.0.x were the loose shell script kit.
 
-## [Unreleased]
+## [1.0.0] - 2026-11-19
 
-Re-run `install.sh` on both nodes to pick these up (`check.sh` reports the changed
-files as `differs from repo` until then).
+### Added
+- OPNsense plugin `os-ha-helpers` (`sysutils/ha-helpers/`, opnsense/plugins layout):
+  settings under System: High Availability: Failover Helpers, a status page, a log page,
+  configd actions (`configctl hahelpers start|stop|status|show|egress|services`), CARP and
+  boot syshooks and cron jobs registered by the plugin. Same hooks on the same events and
+  the same logic as the script kit, ported unchanged apart from paths and log tags
+  (`hahelpers-*`, in `/var/log/hahelpers/`).
+- Settings are model fields in `config.xml`: `general` is carried by HA sync (sync item
+  "CARP failover helpers"), `local` (jumbo MTU devices) never is.
+- Upgrade from the script kit: the model migration imports `/usr/local/etc/kc-ha.conf`;
+  the package archives the kit's files to `/var/backups/ha-helpers-legacy-*.tar` and
+  removes them. Rollback steps in the README.
+- `tools/install.sh` (verifies `SHA256SUMS` and the signature against pinned key
+  fingerprints before installing), `tools/build.sh` (lint and package on a build host),
+  `tools/sign.sh`, `tools/check.conf.sample`. Release key `keys/release.pub`.
+- BSD-2-Clause `LICENSE`; credits for os-carp-vip-dhcp in the README and `pkg-descr`.
+
+### Changed
+- `check.sh` and `drill.sh` moved to `tools/` and check the plugin (package version,
+  `pkg check -s`, enabled, cron jobs, no kit files left) instead of loose files. Their
+  `CHECK_*` settings come from `tools/check.sh -c <file>`, `DRILL_*` from the environment;
+  `KC_HA_*` variables are now `HA_*`.
+- The vendored os-carp-vip-dhcp moved to `third-party/os-carp-vip-dhcp/`.
+
+### Removed
+- The script kit (`files/`, `install.sh`); it stays available at tag v0.0.3.
+
+## [0.0.3] - 2026-11-19
+
+Last release of the shell script kit.
 
 ### Security
 - `install.sh` checks the plugin package against `SHA256SUMS` before installing it,
