@@ -64,12 +64,12 @@ tools/install.sh root@<backup-node>      # backup node first
 tools/install.sh root@<master-node>
 ```
 
-`tools/install.sh` takes os-ha-helpers from the latest GitLab release of this repository
-(`HA_RELEASE=vX.Y.Z` for another one, `HA_PKG_DIR=<dir>` for a local directory such as
-`packages/os-ha-helpers`; the GitLab project is private, so point `HA_GITLAB_TOKEN_FILE` at a
-file with a `read_api` token). It verifies each package (`SHA256SUMS`, and `SHA256SUMS.sig`
-against `keys/release.pub` from your checkout, whose fingerprint is pinned in the script),
-installs `os-carp-vip-dhcp` (skip with `HA_NO_CARPVIPDHCP=1`) and `os-ha-helpers` when the
+`tools/install.sh` takes os-ha-helpers from the latest GitHub release of
+[kawaconnect/os-ha-helpers](https://github.com/kawaconnect/os-ha-helpers/releases) (no account or token
+needed; `HA_RELEASE=vX.Y.Z` for another release, `HA_PKG_DIR=<dir>` for a local directory such as
+`packages/os-ha-helpers`; `HA_RELEASE_SOURCE=gitlab` with `HA_GITLAB_TOKEN_FILE` reads the private GitLab
+project instead). It verifies each package (`SHA256SUMS`, and `SHA256SUMS.sig` against `keys/release.pub`
+from your checkout, whose fingerprint is pinned in the script), installs `os-carp-vip-dhcp` (skip with `HA_NO_CARPVIPDHCP=1`) and `os-ha-helpers` when the
 node has another version, and prints the node status. Without the tools: copy the `.pkg` to
 the node and run `pkg install -U -y ./os-ha-helpers-<version>.pkg`.
 
@@ -156,7 +156,7 @@ The VM holds shallow checkouts of `opnsense/plugins` and `opnsense/core` (`stabl
 | Pipeline | Jobs |
 |---|---|
 | merge request, `main` | `lint` (`make lint`, `sh -n` on every shell file), `style` (phpcs with core's `ruleset.xml`; errors fail, warnings are listed), `package` (`make package`, artifact `dist/` kept 3 days) |
-| protected `v*` tag | the same, then `sign` and `publish` |
+| protected `v*` tag | the same, then `sign`, `publish` (GitLab release) and `github` (GitHub release) |
 
 `product_hash` in the package's version file is this repository's commit.
 
@@ -172,12 +172,18 @@ The VM holds shallow checkouts of `opnsense/plugins` and `opnsense/core` (`stabl
    `tools/install.sh` and verifies the signature; `publish` uploads the three files to the
    generic package registry (`os-ha-helpers/<package version>/`) and creates the GitLab
    release with them as assets and the CHANGELOG section as notes.
-4. Install with `tools/install.sh` (it takes the latest release), backup node first.
+   `github` then waits until the push mirror has carried the tag to GitHub (it must point at the same commit),
+   creates the GitHub release with the same notes through the API (no GitHub Actions), attaches the three files and
+   downloads them again without a token to compare them with what was signed. It needs the CI variable
+   `GITHUB_RELEASE_TOKEN` (file type, protected, masked and hidden, environment scope `github-release`): a
+   fine-grained GitHub token for this one repository with Contents read/write. Without it the job ends with a
+   warning and only the GitLab release exists; the same step can be run by hand (see `tools/ci-release.sh`).
+4. Install with `tools/install.sh` (it takes the latest GitHub release), backup node first.
 
 The signing key is the CI variable `HA_SIGNING_KEY`: file type, protected, masked and hidden,
 environment scope `release` (only the `sign` job has that environment), holding the base64 of
 the PEM key from the password manager. It is never in the repository; the job decodes it to a
-0600 temporary file and removes it after signing. The release does not contain the public
+0600 temporary file and removes it after signing. Neither release contains the public
 key: verify against `keys/release.pub` from a checkout of this repository, whose fingerprint
 `tools/install.sh` pins:
 

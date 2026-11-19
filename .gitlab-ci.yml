@@ -1,5 +1,6 @@
 # os-ha-helpers CI: lint, style and package on merge requests and main; on a protected
-# v* tag also sign and publish the package as GitLab release assets.
+# v* tag also sign and publish the package as GitLab release assets and as a GitHub release
+# (kawaconnect/os-ha-helpers, through the API; no GitHub Actions).
 # All jobs run on the FreeBSD 15 amd64 build runner (tag freebsd-opnsense, project runner
 # for this repository only, unprivileged user gitlab-runner). See README "Build and release".
 
@@ -68,3 +69,16 @@ publish:
   interruptible: false
   script:
     - tools/ci-release.sh publish
+
+github:
+  stage: release
+  <<: *release-rules
+  needs: [sign, publish]
+  interruptible: false
+  environment:
+    name: github-release
+    action: prepare
+  script:
+    - tools/ci-release.sh github
+  allow_failure:
+    exit_codes: [3]
