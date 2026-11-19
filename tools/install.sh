@@ -38,17 +38,31 @@
 # itself: it imports /usr/local/etc/kc-ha.conf and archives the kit's files in
 # /var/backups/ha-helpers-legacy-*.tar.
 #
+# Where os-ha-helpers comes from:
+#   default              the latest GitLab release of this repository (built and
+#                        signed by CI): the .pkg, SHA256SUMS and SHA256SUMS.sig assets
+#   HA_RELEASE=vX.Y.Z    that release instead of the latest
+#   HA_PKG_DIR=<dir>     a local directory with the three files instead, e.g.
+#                        packages/os-ha-helpers (the hand-built 1.0_2) or a CI artifact
+# A release is verified exactly like a local directory: against keys/release.pub
+# from THIS checkout, whose fingerprint is pinned below. The release does not carry
+# the public key; a key downloaded next to a package would prove nothing.
+#
 # Environment:
 #   HA_NO_CARPVIPDHCP=1  skip os-carp-vip-dhcp (no DHCP WAN)
 #   HA_SSH="..."         ssh command (default "ssh"), e.g. "ssh -J bastion"
-#   HA_PKG_DIRS="..."    package directories (default: packages/os-ha-helpers
-#                        and third-party/os-carp-vip-dhcp)
+#   HA_RELEASE_API=...   GitLab project API (default
+#                        https://gitlab.kawalink.com/api/v4/projects/dean%2Fopnsense-ha)
+#   HA_GITLAB_TOKEN_FILE file holding a GitLab token with read_api (the project is
+#                        private); not needed for a public project
 set -eu
 case "${1:-}" in
     ""|-h|--help)
         echo "usage: $0 root@<node>      (one node per run, BACKUP node first)"
         echo "  HA_NO_CARPVIPDHCP=1  skip os-carp-vip-dhcp (no DHCP WAN)"
         echo "  HA_SSH=\"...\"         ssh command to use (default: ssh)"
+        echo "  HA_RELEASE=vX.Y.Z    install that release (default: the latest release)"
+        echo "  HA_PKG_DIR=<dir>     install from a local directory instead of a release"
         [ -n "${1:-}" ]; exit $? ;;
 esac
 host=$1
@@ -92,7 +106,37 @@ install_pkg() {
     [ "$($SSH "$host" "pkg query %v $_name")" = "$_ver" ] || { echo "$_name $_ver did not install on $host" >&2; return 1; }
 }
 
-hh=$(verify "$here/packages/os-ha-helpers" "$here/keys/release.pub" "$PIN_ha_helpers")
+# fetch_release <dir>: download the os-ha-helpers release assets into <dir>
+fetch_release() {
+    _api=${HA_RELEASE_API:-https://gitlab.kawalink.com/api/v4/projects/dean%2Fopnsense-ha}
+    _rel=${HA_RELEASE:-latest}
+    case "$_rel" in latest) _rel=permalink/latest ;; v[0-9]*) ;; *) echo "HA_RELEASE must be latest or vX.Y.Z" >&2; return 1 ;; esac
+    case "$_rel" in *[!A-Za-z0-9/._-]*) echo "unsafe HA_RELEASE" >&2; return 1 ;; esac
+    _hdr=$1/.hdr; : > "$_hdr"; chmod 600 "$_hdr"
+    if [ -n "${HA_GITLAB_TOKEN_FILE:-}" ]; then
+        printf 'PRIVATE-TOKEN: %s\n' "$(cat "$HA_GITLAB_TOKEN_FILE")" > "$_hdr"
+    fi
+    curl -sSfL -H @"$_hdr" -o "$1/release.json" "$_api/releases/$_rel" || { rm -f "$_hdr"; echo "cannot read release $_rel from $_api (token? HA_GITLAB_TOKEN_FILE)" >&2; return 1; }
+    _n=0
+    for _url in $(tr ',' '\n' < "$1/release.json" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p'); do
+        _f=${_url##*/}
+        case "$_f" in os-ha-helpers-*.pkg|SHA256SUMS|SHA256SUMS.sig) ;; *) continue ;; esac
+        curl -sSfL -H @"$_hdr" -o "$1/$_f" "$_url" || { rm -f "$_hdr"; echo "download of $_f failed" >&2; return 1; }
+        _n=$((_n + 1))
+    done
+    rm -f "$_hdr" "$1/release.json"
+    [ "$_n" -eq 3 ] || { echo "release $_rel does not have the three assets (.pkg, SHA256SUMS, SHA256SUMS.sig)" >&2; return 1; }
+    echo "downloaded release ${HA_RELEASE:-latest}: $(ls "$1"/*.pkg | xargs -n1 basename)" >&2
+}
+
+if [ -n "${HA_PKG_DIR:-}" ]; then
+    hhdir=$HA_PKG_DIR
+else
+    hhdir=$(mktemp -d "${TMPDIR:-/tmp}/ha-helpers-release.XXXXXXXX")
+    trap 'rm -rf "$hhdir"' EXIT
+    fetch_release "$hhdir"
+fi
+hh=$(verify "$hhdir" "$here/keys/release.pub" "$PIN_ha_helpers")
 if [ -z "${HA_NO_CARPVIPDHCP:-}" ]; then
     cv=$(verify "$here/third-party/os-carp-vip-dhcp" "$here/third-party/os-carp-vip-dhcp/release.pub" "$PIN_carp_vip_dhcp")
     install_pkg "$cv"

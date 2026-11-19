@@ -9,7 +9,7 @@ under a second, no lost packets or DNS failures, clean failback).
 
 The repository holds the plugin source in the layout of the
 [opnsense/plugins](https://github.com/opnsense/plugins) ports tree
-(`sysutils/ha-helpers/`), the signed package built from it (`packages/os-ha-helpers/`),
+(`sysutils/ha-helpers/`), CI that builds, signs and releases its package (`.gitlab-ci.yml`, GitLab release assets; the last hand-built package is in `packages/os-ha-helpers/`),
 the third-party `os-carp-vip-dhcp` package it works with for a DHCP WAN
 (`third-party/os-carp-vip-dhcp/`), and workstation tools to install, check, drill and
 build (`tools/`). Releases up to v0.0.3 were a set of loose shell scripts (the "script
@@ -63,11 +63,14 @@ tools/install.sh root@<backup-node>      # backup node first
 tools/install.sh root@<master-node>
 ```
 
-`tools/install.sh` verifies each package (`SHA256SUMS`, and `SHA256SUMS.sig` against a
-public key whose fingerprint is pinned in the script), installs `os-carp-vip-dhcp`
-(skip with `HA_NO_CARPVIPDHCP=1`) and `os-ha-helpers` when the node has another version,
-and prints the node status. Without the tools: copy the `.pkg` to the node and run
-`pkg install -U -y ./os-ha-helpers-<version>.pkg`.
+`tools/install.sh` takes os-ha-helpers from the latest GitLab release of this repository
+(`HA_RELEASE=vX.Y.Z` for another one, `HA_PKG_DIR=<dir>` for a local directory such as
+`packages/os-ha-helpers`; the GitLab project is private, so point `HA_GITLAB_TOKEN_FILE` at a
+file with a `read_api` token). It verifies each package (`SHA256SUMS`, and `SHA256SUMS.sig`
+against `keys/release.pub` from your checkout, whose fingerprint is pinned in the script),
+installs `os-carp-vip-dhcp` (skip with `HA_NO_CARPVIPDHCP=1`) and `os-ha-helpers` when the
+node has another version, and prints the node status. Without the tools: copy the `.pkg` to
+the node and run `pkg install -U -y ./os-ha-helpers-<version>.pkg`.
 
 Then, on the master, open System: High Availability: Failover Helpers, tick **Enable**,
 set the **Reference VHID** (the LAN-side CARP VIP) and whatever else applies, **Apply**.
@@ -142,24 +145,53 @@ tar -xpf /var/backups/ha-helpers-legacy-<time>.tar -C /
 the cron jobs and the rendered settings; the settings stay in `config.xml`. pfsync
 `maxupd` and any jumbo MTU go back to the OPNsense defaults at the next reboot.
 
-## Build and sign
+## Build and release
+
+GitLab CI builds the package (`.gitlab-ci.yml`), on a FreeBSD 15 amd64 build VM registered as
+a runner for this project only (tag `freebsd-opnsense`, jobs run as an unprivileged user).
+The VM holds shallow checkouts of `opnsense/plugins` and `opnsense/core` (`stable/26.7`);
+`tools/ci-build.sh` refreshes them per job, puts `sysutils/ha-helpers` into a build tree and runs:
+
+| Pipeline | Jobs |
+|---|---|
+| merge request, `main` | `lint` (`make lint`, `sh -n` on every shell file), `style` (phpcs with core's `ruleset.xml`; errors fail, warnings are listed), `package` (`make package`, artifact `dist/` kept 3 days) |
+| protected `v*` tag | the same, then `sign` and `publish` |
+
+`product_hash` in the package's version file is this repository's commit.
+
+**Releasing** (same flow as before, the package is no longer built by hand):
+
+1. In a merge request: raise `PLUGIN_REVISION` (or `PLUGIN_VERSION`, revision back to 0) in
+   `sysutils/ha-helpers/Makefile` and add a `## [X.Y.Z]` section to `CHANGELOG.md` naming the
+   package version. Merge when the pipeline is green.
+2. Tag the merge commit on `main`: `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`.
+   `v*` tags are protected (Maintainers only), and only protected tags get the signing key.
+3. The tag pipeline builds the package again, `sign` writes `SHA256SUMS` and `SHA256SUMS.sig`
+   (`tools/ci-release.sh sign`, which calls `tools/sign.sh`), checks the key against the pin in
+   `tools/install.sh` and verifies the signature; `publish` uploads the three files to the
+   generic package registry (`os-ha-helpers/<package version>/`) and creates the GitLab
+   release with them as assets and the CHANGELOG section as notes.
+4. Install with `tools/install.sh` (it takes the latest release), backup node first.
+
+The signing key is the CI variable `HA_SIGNING_KEY`: file type, protected, masked and hidden,
+environment scope `release` (only the `sign` job has that environment), holding the base64 of
+the PEM key from the password manager. It is never in the repository; the job decodes it to a
+0600 temporary file and removes it after signing. The release does not contain the public
+key: verify against `keys/release.pub` from a checkout of this repository, whose fingerprint
+`tools/install.sh` pins:
 
 ```sh
-tools/build.sh root@<build-host>         # OPNsense 26.7 build VM, never a production firewall
-tools/sign.sh <private key file>         # SHA256SUMS + SHA256SUMS.sig in packages/os-ha-helpers
-```
-
-`tools/build.sh` copies `sysutils/ha-helpers` into a checkout of `opnsense/plugins` and
-`opnsense/core` (`stable/26.7`) on the build host and runs `make lint` and `make package`
-there. The private key never goes in the repository. Verify a package by hand:
-
-```sh
-cd packages/os-ha-helpers
 sha256sum -c SHA256SUMS
 openssl base64 -d -in SHA256SUMS.sig -out /tmp/sig.bin
-openssl dgst -sha256 -verify ../../keys/release.pub -signature /tmp/sig.bin SHA256SUMS
-openssl pkey -pubin -in ../../keys/release.pub -outform DER | sha256sum   # must equal PIN_ha_helpers in tools/install.sh
+openssl dgst -sha256 -verify keys/release.pub -signature /tmp/sig.bin SHA256SUMS
+openssl pkey -pubin -in keys/release.pub -outform DER | sha256sum   # must equal PIN_ha_helpers in tools/install.sh
 ```
+
+By hand (a build host without CI, or to reproduce a release): `tools/build.sh root@<build-host>`
+copies the plugin into `opnsense/plugins` + `opnsense/core` checkouts on an OPNsense or FreeBSD
+15 host and runs `make lint` and `make package`; `tools/sign.sh <private key> [dir]` signs.
+Never build on a production firewall. `packages/os-ha-helpers/` holds the last hand-built
+package (1.0_2); later versions are only release assets.
 
 ## Upstream submission (opnsense/plugins)
 
