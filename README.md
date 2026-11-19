@@ -161,6 +161,28 @@ openssl dgst -sha256 -verify ../../keys/release.pub -signature /tmp/sig.bin SHA2
 openssl pkey -pubin -in ../../keys/release.pub -outform DER | sha256sum   # must equal PIN_ha_helpers in tools/install.sh
 ```
 
+## Upstream submission (opnsense/plugins)
+
+The plugin is meant to go to [opnsense/plugins](https://github.com/opnsense/plugins) once it has run in production
+for a while. Done: ports-tree layout, BSD-2-Clause headers in every source file, `PLUGIN_MAINTAINER`, MVC model with
+migrations, forms, ACL, menu, configd actions, syshooks, cron via `hahelpers_cron()`, HA sync via
+`hahelpers_xmlrpc_sync()`, `make lint` clean on OPNsense 26.7, phpcs with the core `ruleset.xml` clean. Still to do
+before a pull request:
+
+- Drop the script-kit migration (the `kc-ha.conf` import in `Migrations/M1_0_0.php` and the legacy archive in
+  `+POST_INSTALL.post`) or move it to a separate upgrade note: it only serves installs of this repository's kit.
+- Trim the site history from the script comments (dates, field reports) to plain explanations.
+- Prove the HA sync of the `general` sub-section (`OPNsense.HaHelpers.general`) with a real sync between two nodes
+  and confirm the `local` section is left alone.
+- Run `make style` on an OPNsense development box (pycodestyle and phpcs installed there) and `make lint` against
+  `master`, not only `stable/26.7`.
+- Expect review questions about the shell scripts: reviewers may prefer the logic in PHP or Python behind configd.
+  Behaviour must stay the same, so any rewrite needs the drills again.
+- Agree the name, menu place and the optional relation to os-carp-vip-dhcp and os-tailscale with the maintainers
+  (open an issue first), and write the documentation page for docs.opnsense.org.
+- Pull request against `master` as one commit `sysutils/ha-helpers: new plugin`, without `packages/`, `tools/` or
+  `third-party/`.
+
 ## What HA config sync does not carry (edit on every node)
 
 Gateways and gateway groups, system tunables, Suricata, CrowdSec, Tailscale, interface
