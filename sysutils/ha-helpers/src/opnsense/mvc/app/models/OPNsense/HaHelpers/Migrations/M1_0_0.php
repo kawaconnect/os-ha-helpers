@@ -106,7 +106,7 @@ class M1_0_0 extends BaseModelMigration
     private static function parse($text)
     {
         $result = [];
-        foreach (preg_split('/\r?\n/', (string)$text) as $line) {
+        foreach (preg_split('/\r?\n|;/', (string)$text) as $line) {
             if (preg_match('/^\s*([A-Z][A-Z0-9_]*)=("([^"]*)"|\'([^\']*)\'|([^\s#]*))/', $line, $m)) {
                 $result[$m[1]] = $m[3] !== '' ? $m[3] : (($m[4] ?? '') !== '' ? $m[4] : ($m[5] ?? ''));
             }
@@ -119,7 +119,8 @@ class M1_0_0 extends BaseModelMigration
         $value = trim($value);
         switch ($kind) {
             case 'bool':
-                return in_array(strtolower($value), ['yes', '1', 'on', 'true']) ? '1' : '0';
+                /* the same words the shell kit accepted */
+                return in_array($value, ['yes', 'YES', '1', 'on', 'true'], true) ? '1' : '0';
             case 'list':
                 return implode(',', preg_split('/[\s,]+/', $value, -1, PREG_SPLIT_NO_EMPTY));
             case 'maxupd':

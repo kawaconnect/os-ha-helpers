@@ -31,4 +31,6 @@
 for n in 0.0.0.0/1 128.0.0.0/1; do
     /sbin/route -q delete -net "$n" >/dev/null 2>&1
 done
+# drop the cron jobs now rather than at the next cron regeneration
+/usr/local/sbin/configctl -dq cron restart
 echo "OK"

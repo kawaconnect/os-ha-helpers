@@ -23,7 +23,10 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 # Generated files the package does not own, and the cron jobs it added.
-rm -f /usr/local/etc/hahelpers.conf
-if [ -x /usr/local/sbin/configctl ]; then
-    /usr/local/sbin/configctl cron restart > /dev/null
+# Not on an upgrade (PKG_UPGRADE): the new version keeps using both.
+if [ "${PKG_UPGRADE:-}" != "true" ]; then
+    rm -f /usr/local/etc/hahelpers.conf
+    if [ -x /usr/local/sbin/configctl ]; then
+        /usr/local/sbin/configctl cron restart > /dev/null
+    fi
 fi

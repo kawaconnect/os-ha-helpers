@@ -50,9 +50,23 @@ TAILSCALE_NODES=""            # Tailscale host names of both nodes; empty = tail
 TAILSCALE_HANDOVER_HOLD=45
 HA_SETTINGS="VHID BOOT_GRACE MASTER_ONLY_SERVICES JUMBO_MTU_IFS JUMBO_MTU PFSYNC_MAXUPD BACKUP_EGRESS PIN_DEFAULT_ROUTE UNUSABLE_DEFAULT_GWS GW_PING_TIMEOUT_MS PEER_PING_TIMEOUT_MS UNBOUND_RESTART_ON_MASTER DNS_CHECK_NAME DNS_CHECK_SERVER DNS_RESTART_TRIES DNS_SETTLE DNS_RETRY_WAIT EGRESS_HOOK_DELAY SERVICES_HOOK_DELAY SERVICES_BOOT_DELAY SERVICE_SETTLE LOCK_TIMEOUT TAILSCALE_NODES TAILSCALE_HANDOVER_HOLD"
 HA_CONF=/usr/local/etc/hahelpers.conf
-# the rendered file must belong to root and not be writable by others: root shells source it
-if [ -r "$HA_CONF" ] && [ -z "$(/usr/bin/find "$HA_CONF" \( ! -user root -o -perm -0022 \) 2>/dev/null)" ]; then
-    . "$HA_CONF"
+# The rendered file is read, never sourced: only NAME="value" lines of the known
+# settings, with values made of address, name and pattern characters, are taken.
+# It must belong to root and not be writable by group or others.
+if [ -r "$HA_CONF" ]; then
+    if [ -n "$(/usr/bin/find "$HA_CONF" \( ! -user root -o -perm -020 -o -perm -002 \) 2>/dev/null)" ]; then
+        /usr/bin/logger -p daemon.err -t hahelpers "$HA_CONF is not owned by root or is writable by others: ignored, helpers inert"
+        VHID=""
+    else
+        while IFS= read -r _line; do
+            _name=${_line%%=*}
+            case " $HA_SETTINGS " in *" $_name "*) ;; *) continue ;; esac
+            _val=${_line#*=}
+            case "$_val" in \"*\") _val=${_val#\"}; _val=${_val%\"} ;; *) continue ;; esac
+            case "$_val" in *[!A-Za-z0-9\ ._:*?\[\],/-]*) continue ;; esac
+            eval "$_name=\$_val"
+        done < "$HA_CONF"
+    fi
 fi
 VHID=${HAHELPERS_VHID:-$VHID}
 ha_on() { case "$1" in yes|YES|1|on|true) return 0 ;; esac; return 1; }

@@ -4,6 +4,27 @@ Versions are git tags (`vX.Y.Z`). From 1.0.0 the repository is the os-ha-helpers
 OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers/Makefile`
 (1.0.0 = package 1.0). 0.0.x were the loose shell script kit.
 
+## [1.0.1] - 2026-11-19
+
+Package os-ha-helpers 1.0_2. Review fixes, behaviour of the helpers unchanged.
+
+### Fixed
+- The service start/restart that an HA sync runs on the backup now renders the settings
+  first (`template reload OPNsense/HaHelpers`); before, the backup applied the old values
+  until a GUI save or a reboot.
+- `lib.sh` reads `hahelpers.conf` instead of sourcing it: only known settings with plain
+  address, name and pattern characters are taken, and a file not owned by root or writable
+  by group or others is ignored (logged, helpers inert).
+- The post-deinstall script leaves the rendered settings and cron jobs alone on an upgrade.
+- Switching the helpers off removes their cron jobs at once.
+- Import from `kc-ha.conf`: several assignments on one line are split; yes/no accepts the
+  same words as the kit (`yes YES 1 on true`).
+- `tools/check.sh`: `pkg check -s` judged by its exit status, the config.xml collection must
+  finish on both nodes, backup egress routes must point at the reference VIP.
+
+### Changed
+- "Unusable default gateways" cannot be empty (the kit allowed `UNUSABLE_DEFAULT_GWS=""`).
+
 ## [1.0.0] - 2026-11-19
 
 ### Added

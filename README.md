@@ -94,7 +94,7 @@ the plugin renders from it (documentation addresses, RFC 5737).
 | Boot grace | `BOOT_GRACE` | 120 | seconds after boot a MASTER event is distrusted while the peer answers |
 | Backup egress | `BACKUP_EGRESS` | on | `0/1` + `128/1` via the master on the BACKUP |
 | Pin default route | `PIN_DEFAULT_ROUTE` | on | keep the default route on a usable upstream gateway and its device |
-| Unusable default gateways | `UNUSABLE_DEFAULT_GWS` | RFC 1918 + link-local patterns | unconfigured default gateways treated as unusable |
+| Unusable default gateways | `UNUSABLE_DEFAULT_GWS` | RFC 1918 + link-local patterns | unconfigured default gateways treated as unusable (cannot be empty, unlike the kit) |
 | Gateway / peer ping timeout | `GW_PING_TIMEOUT_MS`, `PEER_PING_TIMEOUT_MS` | 700, 500 | probe timeouts (ms) |
 | Routing delay, Lock timeout | `EGRESS_HOOK_DELAY`, `LOCK_TIMEOUT` | 2, 30 | hook timing |
 | Restart Unbound on takeover, Check name/server, Restart attempts, Settle time, Check delay | `UNBOUND_RESTART_ON_MASTER`, `DNS_*` | on, opnsense.org, 127.0.0.1, 2, 4, 3 | Unbound restart and check |
