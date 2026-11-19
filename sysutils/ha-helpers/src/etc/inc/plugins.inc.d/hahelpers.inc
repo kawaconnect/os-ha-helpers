@@ -39,8 +39,9 @@ function hahelpers_services()
         $services[] = [
             'description' => gettext('CARP failover helpers'),
             'configd' => [
-                'restart' => ['hahelpers restart'],
-                'start' => ['hahelpers start'],
+                /* render the settings first: an HA sync restarts this on the backup */
+                'restart' => ['template reload OPNsense/HaHelpers', 'hahelpers restart'],
+                'start' => ['template reload OPNsense/HaHelpers', 'hahelpers start'],
                 'stop' => ['hahelpers stop'],
             ],
             'nocheck' => true,

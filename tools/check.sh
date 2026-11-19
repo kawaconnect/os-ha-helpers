@@ -41,7 +41,7 @@ echo "version=$(opnsense-version -v)"
 . $H/lib.sh 2>/dev/null
 echo "pkg=$(pkg query %v "$PKGNAME")"
 echo "hhpkg=$(pkg query %v os-ha-helpers)"
-echo "hhcheck=$(pkg check -s os-ha-helpers 2>&1 | grep -v -i 'checking' | tr '\n' ' ')"
+if pkg check -sq os-ha-helpers >/dev/null 2>&1; then echo "hhcheck=ok"; else echo "hhcheck=$(pkg check -s os-ha-helpers 2>&1 | tail -3 | tr '\n' ' ')"; fi
 echo "hhenabled=$(/usr/local/sbin/configctl hahelpers status)"
 # settings synced by HA (all but the per-node interface list) must match across the pair
 echo "conf=$($H/status.sh --settings 2>/dev/null | grep -v -E '^JUMBO_MTU(_IFS)?=' | tr '\n' ' ')"
@@ -86,6 +86,7 @@ print("cmpconfig=" + " ".join(cmpd))
 want=os.environ.get("CHECK_REPLY_TO_IFS","").split() or sorted({g.findtext("interface") for g in r.find("OPNsense/Gateways").iter("gateway_item") if (g.findtext("disabled") or "0")!="1" and (g.findtext("defaultgw") or "0")=="1" and (g.findtext("ipprotocol") or "inet")=="inet"})
 print("replyto=" + " ".join("%s:%s" % (i, "set" if (ifs.find(i) is not None and ifs.find(i).findtext("gateway")) else "MISSING") for i in want))
 print("keepers=%d" % len(list(r.find("OPNsense/CarpVipDhcp/keepers").iter("keeper"))) if r.find("OPNsense/CarpVipDhcp/keepers") is not None else "keepers=0")
+print("pyok=1")
 PY
 REMOTE
 }
@@ -98,9 +99,10 @@ for n in A B; do
 done
 for n in A B; do
     eval "D=\$$n"
+    [ "$(get pyok "$D")" = 1 ] || { echo "the config.xml part of the collection failed on $(get hostname "$D"): nothing was checked"; exit 2; }
     host=$(get hostname "$D"); echo "== $host ($(get version "$D")) os-ha-helpers $(get hhpkg "$D")"
     [ "$(get hhpkg "$D")" = "$hhver" ] && ok "os-ha-helpers $hhver" || fail "os-ha-helpers is '$(get hhpkg "$D")', repo has $hhver"
-    [ -z "$(get hhcheck "$D")" ] && ok "installed files match the package (pkg check -s)" || fail "pkg check -s os-ha-helpers: $(get hhcheck "$D")"
+    [ "$(get hhcheck "$D")" = ok ] && ok "installed files match the package (pkg check -s)" || fail "pkg check -s os-ha-helpers: $(get hhcheck "$D")"
     case "$(get hhenabled "$D")" in *"is running"*) ok "helpers enabled with a reference VHID" ;; *) fail "helpers disabled or no reference VHID (System: High Availability: Failover Helpers)" ;; esac
     [ "$(get cron "$D")" = 2 ] && ok "2 cron jobs (master-only services, Tailscale handover)" || fail "$(get cron "$D") ha-helpers cron jobs, want 2 (configctl hahelpers restart)"
     [ -z "$(get kitfiles "$D")" ] && ok "no files of the old script kit" || fail "files of the old script kit are still present: $(get kitfiles "$D")"
@@ -131,7 +133,7 @@ for n in A B; do
     nm=$(get st:masters "$D"); nb=$(get st:backups "$D"); eg=$(get st:egress "$D"); def=$(get st:default "$D")
     if [ "$nm" -gt 0 ] && [ "$nb" -gt 0 ]; then fail "mixed CARP roles: $nm MASTER / $nb BACKUP"
     elif [ "$nm" -gt 0 ]; then [ -z "$eg" ] && ok "MASTER ($nm VIPs), no backup-egress routes" || fail "MASTER still has egress routes: $eg"
-    elif [ "$nb" -gt 0 ]; then [ "$(printf '%s' "$eg" | wc -w)" -eq 2 ] && ok "BACKUP ($nb VIPs), egress via master: $eg" || fail "BACKUP missing egress routes: '$eg'"
+    elif [ "$nb" -gt 0 ]; then vip=$(get st:vip "$D"); [ "$(printf '%s' "$eg" | wc -w)" -eq 2 ] && [ "$eg" = "0.0.0.0/1>$vip 128.0.0.0/1>$vip " ] && ok "BACKUP ($nb VIPs), egress via master: $eg" || fail "BACKUP egress routes are '$eg', want 0/1 and 128/1 via $vip"
     else fail "no CARP VIPs"; fi
     # a configured gateway may be private (CPE / cellular router LAN): judge it by its device, not its address
     dgw=${def%@*}; known=no; [ -n "$dgw" ] && case ";$(get gateways "$D");" in *"/$dgw/"*) known=yes ;; esac
