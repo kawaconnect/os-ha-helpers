@@ -33,6 +33,15 @@ files as `differs from repo` until then).
 - `check.sh` works on a workstation without `md5sum` (macOS, BSD).
 
 ### Changed
+- Vendored `os-carp-vip-dhcp` 1.13.8 -> 1.18.4 (upstream signed release asset, signature
+  checked with the author's `keys/release.pub`; `sig.bin` dropped, `SHA256SUMS.sig` is the
+  upstream file). Highlights: a BACKUP keeper sends no DHCP on the WAN any more (no switch
+  MAC flap), follow mode also follows the lease's prefix and router, short stop-gap leases
+  are ignored (`minLeaseTime`, 60 s), DHCP identity values are kept off the command line.
+  The keeper model migrates 1.1.0 -> 1.4.1 on install (`followIp` -> `leasePolicy`,
+  client-id/vendor class -> `clientIdentifier`/Send Options, same packets on the wire).
+  Upgrade both nodes before the next HA config sync of `carpvipdhcp`; see README
+  "Upgrading the plugin". `examples/` updated to the new settings.
 - `drill.sh` asks before demoting the master when run on a terminal (`KC_HA_YES=1`
   skips the question; without a terminal it runs as before).
 - `install.sh -h` prints usage; a missing plugin package is reported instead of
