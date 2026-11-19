@@ -36,6 +36,17 @@
 # Settings (lib.sh names): UNBOUND_RESTART_ON_MASTER, DNS_CHECK_NAME,
 # DNS_CHECK_SERVER, DNS_RESTART_TRIES, DNS_SETTLE, DNS_RETRY_WAIT, BOOT_GRACE.
 . /usr/local/opnsense/scripts/OPNsense/HaHelpers/lib.sh
+if [ "${1:-}" = "--dry-run" ]; then
+    # what a MASTER event of the reference VIP would do now; changes nothing
+    ha_load
+    if ! ha_on "$UNBOUND_RESTART_ON_MASTER"; then echo "Unbound restart on takeover is off"
+    elif [ -z "$IF" ]; then echo "no CARP VIP with vhid ${VHID:-unset}: nothing to do"
+    elif [ "$(ha_role)" != MASTER ]; then echo "$(ha_role): a MASTER event of vhid $VHID would restart Unbound and check $DNS_CHECK_NAME @$DNS_CHECK_SERVER"
+    elif ! ha_master_trusted; then echo "MASTER within boot grace while the peer answers: the event would be ignored"
+    else echo "MASTER: a MASTER event of vhid $VHID would restart Unbound and check $DNS_CHECK_NAME @$DNS_CHECK_SERVER"; fi
+    /usr/bin/drill -Q "$DNS_CHECK_NAME" @"$DNS_CHECK_SERVER" 2>/dev/null | grep -qE '^[0-9a-f:.]+$' && echo "resolving $DNS_CHECK_NAME @$DNS_CHECK_SERVER now: ok" || echo "resolving $DNS_CHECK_NAME @$DNS_CHECK_SERVER now: FAILED"
+    exit 0
+fi
 ha_on "$UNBOUND_RESTART_ON_MASTER" || exit 0
 [ -z "${1:-}" ] || [ "${1%%@*}" = "$VHID" ] || exit 0
 ha_load

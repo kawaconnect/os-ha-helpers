@@ -38,19 +38,28 @@
 # (renders the config and starts). A start that still fails is logged as an error.
 # one at a time: a CARP transition fires the hook once per VIP
 . /usr/local/opnsense/scripts/OPNsense/HaHelpers/lib.sh
-if [ -z "${HAHELPERS_LOCKED:-}" ]; then
+# --dry-run: print the decision for every service and change nothing
+DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
+if [ "$DRY" = 0 ] && [ -z "${HAHELPERS_LOCKED:-}" ]; then
     HAHELPERS_LOCKED=1 exec /usr/bin/lockf -t "$LOCK_TIMEOUT" /var/run/hahelpers-services.lock /bin/sh "$0" "$@"
 fi
-[ -n "$MASTER_ONLY_SERVICES" ] || exit 0
+dry() { [ "$DRY" = 1 ] && echo "$*"; }
+[ -n "$MASTER_ONLY_SERVICES" ] || { dry "no master-only services configured"; exit 0; }
 ha_load
-[ -n "$IF" ] || exit 0
+[ -n "$IF" ] || { dry "no CARP VIP with vhid ${VHID:-unset}: nothing to do"; exit 0; }
 role=$(ha_role)
 want=stopped
 if [ "$role" = MASTER ]; then
-    if ha_master_trusted; then want=running; else exit 0; fi
+    if ha_master_trusted; then want=running; else dry "MASTER within boot grace while the peer answers: ignored"; exit 0; fi
 fi
 state() { case "$(/usr/local/sbin/pluginctl -s "$1" status 2>/dev/null)" in *"is running"*) echo running ;; *) echo stopped ;; esac; }
 for svc in $MASTER_ONLY_SERVICES; do
+    if [ "$DRY" = 1 ]; then
+        cur=$(state "$svc")
+        if [ "$cur" = "$want" ]; then echo "${role:-no-carp}: $svc is $cur, nothing to do"
+        else echo "${role:-no-carp}: $svc is $cur, would $( [ "$want" = running ] && echo start || echo stop ) it"; fi
+        continue
+    fi
     [ "$(state "$svc")" = "$want" ] && continue
     if [ "$want" = running ]; then
         /usr/local/sbin/pluginctl -s "$svc" start >/dev/null 2>&1; sleep "$SERVICE_SETTLE"

@@ -41,7 +41,7 @@ class StatusController extends ApiControllerBase
     public function getAction()
     {
         $result = ['status' => [], 'settings' => []];
-        $output = (new Backend())->configdpRun('hahelpers show', ['--kv']);
+        $output = (new Backend())->configdRun('hahelpers showkv');
         foreach (explode("\n", (string)$output) as $line) {
             $pos = strpos($line, '=');
             if ($pos === false) {

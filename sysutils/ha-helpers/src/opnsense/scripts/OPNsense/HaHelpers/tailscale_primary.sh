@@ -33,14 +33,17 @@
 # then bring it back. Runs from the CARP hook and from cron; idempotent;
 # logs to hahelpers-tailscale. Off unless TAILSCALE_NODES is set in the ha-helpers settings.
 . /usr/local/opnsense/scripts/OPNsense/HaHelpers/lib.sh
-if [ -z "${HAHELPERS_LOCKED:-}" ]; then
+# --dry-run: print the decision and change nothing
+DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
+dry() { [ "$DRY" = 1 ] && echo "$*"; }
+if [ "$DRY" = 0 ] && [ -z "${HAHELPERS_LOCKED:-}" ]; then
     HAHELPERS_LOCKED=1 exec /usr/bin/lockf -s -t 0 /var/run/hahelpers-tailscale.lock /bin/sh "$0" "$@"
 fi
 TS=/usr/local/bin/tailscale
-[ -n "$TAILSCALE_NODES" ] && [ -x "$TS" ] || exit 0
+[ -n "$TAILSCALE_NODES" ] && [ -x "$TS" ] || { dry "Tailscale nodes not set or tailscale not installed: off"; exit 0; }
 ha_load
-[ -n "$IF" ] || exit 0
-[ "$(ha_role)" = BACKUP ] || exit 0
+[ -n "$IF" ] || { dry "no CARP VIP with vhid ${VHID:-unset}: nothing to do"; exit 0; }
+[ "$(ha_role)" = BACKUP ] || { dry "$(ha_role): only a BACKUP hands routes over; nothing to do"; exit 0; }
 
 # "<routes held by this node> <online peers holding/advertising the same routes>"
 read held peer <<EOF
@@ -59,7 +62,12 @@ peer = sum(1 for p in (d.get("Peer") or {}).values()
            and (p.get("HostName") or "").lower() != name)
 print(held, peer)')
 EOF
-[ "${held:-0}" -gt 0 ] || exit 0
+[ "${held:-0}" -gt 0 ] || { dry "BACKUP holds no Tailscale primary routes: nothing to do"; exit 0; }
+if [ "$DRY" = 1 ]; then
+    [ "${peer:-0}" -eq 0 ] && echo "BACKUP holds $held route(s) but the master is not online in the tailnet: would keep them" \
+        || echo "BACKUP holds $held route(s): would stop tailscaled for ${TAILSCALE_HANDOVER_HOLD}s to hand them to the master"
+    exit 0
+fi
 if [ "${peer:-0}" -eq 0 ]; then
     logger -t hahelpers-tailscale "BACKUP holds the Tailscale LAN routes but the master is not online in the tailnet; keeping them"
     exit 0

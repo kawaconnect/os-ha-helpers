@@ -23,7 +23,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 # Remove the backup egress routes: on a node that later becomes MASTER they
-# would send traffic to its own CARP address.
-if [ -x /usr/local/opnsense/scripts/OPNsense/HaHelpers/stop.sh ]; then
+# would send traffic to its own CARP address. Not on an upgrade (pkg sets
+# PKG_UPGRADE): the new version applies the settings again right after.
+if [ "${PKG_UPGRADE:-}" != "true" ] && [ -x /usr/local/opnsense/scripts/OPNsense/HaHelpers/stop.sh ]; then
     /usr/local/opnsense/scripts/OPNsense/HaHelpers/stop.sh > /dev/null
 fi

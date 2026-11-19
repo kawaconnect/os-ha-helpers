@@ -105,8 +105,11 @@ the plugin renders from it (documentation addresses, RFC 5737).
 
 The settings live in `config.xml` under `OPNsense/HaHelpers`: `general` (HA-synced) and
 `local` (per node). configd renders them to `/usr/local/etc/hahelpers.conf` for the
-scripts; `configctl hahelpers show --settings` prints what is in effect, the Failover
-Helpers Status page shows the node state (`configctl hahelpers show` on the console).
+scripts. On the console: `configctl hahelpers show` (node state, as on the Failover Helpers
+Status page), `configctl hahelpers settings` (settings in effect), and dry runs that change
+nothing: `configctl hahelpers routes dryrun` (route commands), `routes show`,
+`services dryrun` (master-only services), `dns dryrun` (Unbound on takeover),
+`tailscale dryrun` (route handover).
 
 ## Upgrade from the script kit
 
