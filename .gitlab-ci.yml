@@ -1,0 +1,70 @@
+# os-ha-helpers CI: lint, style and package on merge requests and main; on a protected
+# v* tag also sign and publish the package as GitLab release assets.
+# All jobs run on the FreeBSD 15 amd64 build runner (tag freebsd-opnsense, project runner
+# for this repository only, unprivileged user gitlab-runner). See README "Build and release".
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]/
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+stages: [check, build, release]
+
+default:
+  tags: [freebsd-opnsense]
+  interruptible: true
+
+variables:
+  GIT_DEPTH: "20"
+  HA_BUILD_BRANCH: stable/26.7
+
+.release-rules: &release-rules
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]/ && $CI_COMMIT_REF_PROTECTED == "true"
+
+lint:
+  stage: check
+  script:
+    - tools/ci-build.sh lint
+
+style:
+  stage: check
+  script:
+    - tools/ci-build.sh style
+
+package:
+  stage: build
+  needs: [lint, style]
+  script:
+    - tools/ci-build.sh package
+  artifacts:
+    name: "os-ha-helpers-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/]
+    expire_in: 3 days
+
+sign:
+  stage: release
+  <<: *release-rules
+  needs: [package]
+  interruptible: false
+  environment:
+    name: release
+    action: prepare
+  script:
+    - tools/ci-release.sh sign
+  artifacts:
+    name: "os-ha-helpers-$CI_COMMIT_TAG-signed"
+    paths: [dist/]
+    expire_in: 3 days
+
+publish:
+  stage: release
+  <<: *release-rules
+  needs: [sign]
+  interruptible: false
+  script:
+    - tools/ci-release.sh publish

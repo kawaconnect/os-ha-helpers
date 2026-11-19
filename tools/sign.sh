@@ -28,14 +28,15 @@
 # the release key (RSA, the private half of keys/release.pub), in the format
 # the os-carp-vip-dhcp releases use: SHA256SUMS.sig is the base64 signature.
 #
-#   tools/sign.sh <private key file>
+#   tools/sign.sh <private key file> [package directory]
 #
+# The directory defaults to packages/os-ha-helpers; CI signs dist/.
 # Keep the private key out of the repository (password manager, protected CI
 # variable). Verify: tools/install.sh does it before every install.
 set -eu
-[ $# -eq 1 ] && [ -r "$1" ] || { echo "usage: $0 <private key file>"; exit 2; }
+[ $# -ge 1 ] && [ $# -le 2 ] && [ -r "$1" ] || { echo "usage: $0 <private key file> [package directory]"; exit 2; }
 here=$(cd "$(dirname "$0")/.." && pwd)
-dir=$here/packages/os-ha-helpers
+dir=${2:-$here/packages/os-ha-helpers}
 cd "$dir"
 set -- "$1" os-ha-helpers-*.pkg
 [ -f "$2" ] || { echo "no package in $dir" >&2; exit 1; }
