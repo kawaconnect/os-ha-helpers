@@ -36,8 +36,8 @@ On the firewalls:
 - Two OPNsense nodes (26.1 or 26.7) already set up as an HA pair: CARP VIPs, pfsync on a
   dedicated SYNC link, config sync. This kit does not create that setup.
 - Root SSH from your workstation to both nodes (key login; the root shell may stay csh).
-- For a DHCP WAN: the vendored `os-carp-vip-dhcp` package is built for OPNsense 26.7
-  (FreeBSD 15, amd64). On another release build it from its source (see
+- For a DHCP WAN: the vendored `os-carp-vip-dhcp` package (1.18.4) is built for OPNsense
+  26.7 (FreeBSD 15, amd64). On another release build it from its source (see
   [Plugin package](#plugin-package)) and point `KC_HA_PLUGIN_DIR` at it, or set
   `KC_HA_NO_PLUGIN=1` if no WAN is DHCP.
 
@@ -345,17 +345,49 @@ sysctl net.inet.carp.demotion=-240    # relative counter: undo with the negative
 ## Plugin package
 
 `plugins/os-carp-vip-dhcp/` holds the package `install.sh` installs:
-`os-carp-vip-dhcp-1.13.8`, built for OPNsense 26.7 (FreeBSD 15, amd64). It is third-party
-software (BSD 2-Clause) from <https://github.com/toreamun/opnsense-plugins> and is not in
-the OPNsense repos. `SHA256SUMS` records its checksum, `sig.bin` is a signature of
-`SHA256SUMS` and `release.pub` the key it was made with (`SHA256SUMS.sig` is the same
-signature in base64). To verify by hand:
+`os-carp-vip-dhcp-1.18.4`, built for OPNsense 26.7 (ABI `FreeBSD:15:amd64`, pure Python and
+PHP, no dependencies). It is third-party software (BSD 2-Clause) by Tore Amundsen from
+<https://github.com/toreamun/opnsense-plugins> and is not in the OPNsense repos. The files
+are the upstream release assets of tag `v1.18.4`, unchanged:
+
+| File | What it is |
+|---|---|
+| `os-carp-vip-dhcp-1.18.4.pkg` | the package |
+| `SHA256SUMS` | its checksum, as published upstream |
+| `SHA256SUMS.sig` | the author's RSA signature of `SHA256SUMS` (base64) |
+| `release.pub` | copy of the author's public key `keys/release.pub` from the upstream repository |
+
+Verify against the author's key, taken from the upstream repository rather than from
+this directory:
 
 ```sh
 cd plugins/os-carp-vip-dhcp
+curl -fsSLo /tmp/upstream-release.pub \
+  https://raw.githubusercontent.com/toreamun/opnsense-plugins/v1.18.4/keys/release.pub
+cmp /tmp/upstream-release.pub release.pub          # the vendored copy is the author's key
 sha256sum -c SHA256SUMS
-openssl dgst -sha256 -verify release.pub -signature sig.bin SHA256SUMS
+openssl base64 -d -in SHA256SUMS.sig -out /tmp/SHA256SUMS.sig.bin
+openssl dgst -sha256 -verify /tmp/upstream-release.pub -signature /tmp/SHA256SUMS.sig.bin SHA256SUMS
 ```
 
-The key sits next to the package, so this proves the files belong together, not who
-built them. Compare with the upstream release if that matters to you.
+The upstream key has not changed since v1.0. `install.sh` itself only checks the package
+against `SHA256SUMS`; do the signature check above whenever the package is replaced.
+
+### Upgrading the plugin
+
+1. Download the release assets of the new tag (`gh release download vX.Y.Z -R
+   toreamun/opnsense-plugins`), verify them as above, read the release notes between the
+   two versions (model migrations, HA notes), and replace the files here.
+2. Upgrade **both nodes before the next HA config sync** of the `carpvipdhcp` item: a node
+   on an older version does not understand settings migrated by a newer one. Do not run a
+   scheduled "HA update and reconfigure backup" job in between.
+3. Backup node first (`./install.sh root@<backup>`): on 1.14 and later a BACKUP keeper sends
+   nothing on the WAN, so check its log says `initial CARP role ...: BACKUP` and the
+   heartbeat shows `bound=-`. Then the master right after: the keeper restarts, renews at
+   once (`DHCP BOUND` in its log) and the VIP never leaves the interface.
+4. From 1.18.3 the master corrects a VIP prefix or WAN gateway that differs from its lease
+   right after the upgrade (a prefix change costs one short CARP failover per node). Compare
+   the VIP prefix and gateway with the `mask=` and `gw=` of the last `DHCP reply: ACK` line
+   in `/var/log/carpvipdhcp-*.log` beforehand; if they match, nothing changes.
+5. `./check.sh` must say `ALL OK`; compare the `OPNsense/CarpVipDhcp` section of both
+   `config.xml` files (only `persisted_at` may differ).
