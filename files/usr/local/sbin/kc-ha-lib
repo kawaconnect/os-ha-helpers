@@ -48,17 +48,20 @@ kc_ha_gw_unusable() {
 
 # Sets: VIP IF (the reference CARP VIP and its device), PEER (pfsync peer IP),
 # GWS ("gw@device ..." upstream IPv4 gateways, best priority first).
+# The output is eval'ed by a root shell, so only values made of address and
+# device-name characters are printed; anything else in config.xml reads as empty.
 kc_ha_load() {
     eval "$(/usr/local/bin/python3 - "$VHID" <<'PY'
-import sys, xml.etree.ElementTree as ET
+import re, sys, xml.etree.ElementTree as ET
 vhid = sys.argv[1]
+safe = lambda s: s if re.match(r'^[0-9A-Za-z_.:-]*$', s or '') else ''
 r = ET.parse('/conf/config.xml').getroot()
 ifmap = {i.tag: (i.findtext('if') or '') for i in r.find('interfaces')}
 vip = next((v for v in r.find('virtualip').iter('vip')
             if v.findtext('mode') == 'carp' and v.findtext('vhid') == vhid), None) if r.find('virtualip') is not None else None
-print('VIP=%s' % (vip.findtext('subnet') if vip is not None else ''))
-print('IF=%s' % (ifmap.get(vip.findtext('interface'), '') if vip is not None else ''))
-print('PEER=%s' % (r.findtext('hasync/pfsyncpeerip') or ''))
+print('VIP=%s' % safe(vip.findtext('subnet') if vip is not None else ''))
+print('IF=%s' % safe(ifmap.get(vip.findtext('interface'), '') if vip is not None else ''))
+print('PEER=%s' % safe(r.findtext('hasync/pfsyncpeerip') or ''))
 gws = []
 for it in r.find('OPNsense/Gateways').iter('gateway_item'):
     g = lambda k, d='': (it.findtext(k) or d)
@@ -66,7 +69,9 @@ for it in r.find('OPNsense/Gateways').iter('gateway_item'):
         continue
     if g('ipprotocol', 'inet') != 'inet' or not g('gateway') or g('gateway') == 'dynamic':
         continue
-    gws.append((int(g('priority', '255') or 255), g('gateway'), ifmap.get(g('interface'), '')))
+    if not safe(g('gateway')) or not g('priority', '255').isdigit():
+        continue
+    gws.append((int(g('priority', '255')), g('gateway'), safe(ifmap.get(g('interface'), ''))))
 gws.sort()
 print('GWS="%s"' % ' '.join('%s@%s' % (x[1], x[2]) for x in gws))
 PY

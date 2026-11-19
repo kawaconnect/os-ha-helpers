@@ -16,7 +16,15 @@
 #                       password login: "sshpass -f /root/.fwpw ssh -o ProxyJump=bastion"
 #   KC_HA_PLUGIN_DIR    directory holding the plugin .pkg (default plugins/os-carp-vip-dhcp)
 set -eu
-host="${1:?usage: $0 root@<node>}"
+case "${1:-}" in
+    ""|-h|--help)
+        echo "usage: $0 root@<node>      (one node per run, BACKUP node first)"
+        echo "  KC_HA_NO_PLUGIN=1   skip the carp-vip-dhcp plugin (no DHCP WAN)"
+        echo "  KC_HA_SSH=\"...\"     ssh command to use (default: ssh)"
+        echo "  KC_HA_PLUGIN_DIR    directory holding the plugin .pkg and SHA256SUMS"
+        [ -n "${1:-}" ]; exit $? ;;
+esac
+host=$1
 SSH=${KC_HA_SSH:-ssh}
 here=$(cd "$(dirname "$0")" && pwd)
 version=$(cd "$here" && git describe --always --dirty 2>/dev/null || cat "$here/VERSION" 2>/dev/null || echo unknown)
@@ -26,12 +34,24 @@ plugdir=${KC_HA_PLUGIN_DIR:-$here/plugins/os-carp-vip-dhcp}
 # come from the package file name (<name>-<version>.pkg).
 # (no 2> redirects in the remote command: the OPNsense root shell is csh)
 if [ -z "${KC_HA_NO_PLUGIN:-}" ]; then
-    pkgfile=$(ls "$plugdir"/*.pkg | head -1)
+    pkgfile=$(ls "$plugdir"/*.pkg 2>/dev/null | head -1)
+    [ -n "$pkgfile" ] || { echo "no .pkg in $plugdir (set KC_HA_PLUGIN_DIR, or KC_HA_NO_PLUGIN=1 for a site without a DHCP WAN)" >&2; exit 1; }
     pkgbase=$(basename "$pkgfile" .pkg); pkgver=${pkgbase##*-}; pkgname=${pkgbase%-*}
+    # The package is installed as root on a firewall: it must be the file this
+    # repo recorded in SHA256SUMS.
+    if command -v sha256sum >/dev/null 2>&1; then sum=$(sha256sum "$pkgfile" | cut -d' ' -f1)
+    elif command -v shasum >/dev/null 2>&1; then sum=$(shasum -a 256 "$pkgfile" | cut -d' ' -f1)
+    else sum=$(sha256 -q "$pkgfile"); fi
+    grep -q "^$sum  \(\./\)\{0,1\}$pkgbase\.pkg\$" "$plugdir/SHA256SUMS" 2>/dev/null \
+        || { echo "$pkgfile does not match $plugdir/SHA256SUMS: not installing it" >&2; exit 1; }
     if [ "$($SSH "$host" "pkg query %v $pkgname")" != "$pkgver" ]; then
         echo "installing $pkgname $pkgver on $host"
-        $SSH "$host" "cat > /tmp/$(basename "$pkgfile")" < "$pkgfile"
-        $SSH "$host" "pkg install -y /tmp/$(basename "$pkgfile") && rm -f /tmp/$(basename "$pkgfile")"
+        # private directory on the node, not a guessable name in /tmp
+        rtmp=$($SSH "$host" "mktemp -d /tmp/kc-ha.XXXXXXXX")
+        case "$rtmp" in /tmp/kc-ha.*) ;; *) echo "could not create a temporary directory on $host" >&2; exit 1 ;; esac
+        $SSH "$host" "cat > $rtmp/$pkgbase.pkg" < "$pkgfile"
+        $SSH "$host" "pkg install -y $rtmp/$pkgbase.pkg; rm -rf $rtmp"
+        [ "$($SSH "$host" "pkg query %v $pkgname")" = "$pkgver" ] || { echo "$pkgname $pkgver did not install on $host" >&2; exit 1; }
     fi
 fi
 
@@ -49,7 +69,10 @@ REMOTE
 
 # Scripts, hooks, cron (tar over ssh). The sample config is shipped next to the
 # live one; the live one is created only if missing.
-( cd "$here/files" && tar -cf - usr etc ) | $SSH "$host" "tar -xf - -C /"
+# Only the files are archived (no directory entries) and they are unpacked
+# without the archive's owner: tar run by root would otherwise give /usr, /etc
+# and the scripts the uid and directory modes of whoever cloned this repo.
+( cd "$here/files" && find usr etc -type f | sort | tar -cf - -T - ) | $SSH "$host" "tar -xof - -C /"
 $SSH "$host" "sh -s" <<'REMOTE'
 chmod 755 /usr/local/sbin/kc-* /usr/local/etc/rc.syshook.d/carp/*-kc-* /usr/local/etc/rc.syshook.d/start/9*-kc-* /usr/local/etc/rc.syshook.d/start/95-pfsync-maxupd
 chmod 644 /etc/cron.d/kc-ha-master-services /etc/cron.d/kc-ha-tailscale-primary /usr/local/etc/kc-ha.conf.sample
@@ -86,6 +109,7 @@ elif ! /sbin/ifconfig | grep -q "vhid $VHID "; then
 fi
 exit 0
 REMOTE
+version=$(printf '%s' "$version" | tr -cd 'A-Za-z0-9._+-')
 $SSH "$host" "sh -c 'echo $version > /usr/local/etc/kc-ha.version'"
 
 # Apply immediately. Every hook is idempotent; the only one that can disturb a
