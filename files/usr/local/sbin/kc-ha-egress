@@ -62,8 +62,9 @@ if [ -z "$VIP" ] || [ -z "$IF" ]; then
 fi
 role=$(kc_ha_role)
 have=$(/usr/bin/netstat -rn -f inet | awk '$1=="0.0.0.0/1"||$1=="128.0.0.0/1"' | wc -l | tr -d ' ')
-curdef=${KC_HA_TEST_DEF-$(/usr/bin/netstat -rn -f inet | awk '$1=="default"{print $2; exit}')}   # KC_HA_TEST_DEF: test hook for --dry-run
-curdev=${KC_HA_TEST_DEV-$(/usr/bin/netstat -rn -f inet | awk '$1=="default"{print $4; exit}')}
+defroute=$(kc_ha_default_route)   # gateway@device, empty if none
+curdef=${KC_HA_TEST_DEF-${defroute%@*}}   # KC_HA_TEST_DEF/DEV: test hooks for --dry-run
+curdev=${KC_HA_TEST_DEV-${defroute#*@}}
 
 if [ "${1:-}" = "--show" ]; then
     echo "role=$role vip=$VIP if=$IF vhid=$VHID peer=$PEER uptime=$(kc_ha_uptime)s egress_routes=$have default=${curdef:-none}@${curdev:-none} upstream_by_priority=[$GWS]"

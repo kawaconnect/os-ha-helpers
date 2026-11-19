@@ -65,7 +65,9 @@ import os
 ign=set(os.environ.get("CHECK_COMPARE_IGNORE","").split())
 cmpd=[]
 for path in os.environ.get("CHECK_COMPARE_CONFIG","").split():
-    u=r.find(path); cmpd.append(path+"{"+(";".join("%s=%s" % (c.tag, c.text or "") for c in u if c.tag not in ign) if u is not None else "none")+"}")
+    # an entry with child elements (a plugin's list of instances) compares by its children's values
+    val=lambda c: "(" + ",".join("%s=%s" % (x.tag, (x.text or "").strip()) for x in c if x.tag not in ign) + ")" if len(c) else (c.text or "")
+    u=r.find(path); cmpd.append(path+"{"+(";".join("%s=%s" % (c.tag, val(c)) for c in u if c.tag not in ign) if u is not None else "none")+"}")
 print("cmpconfig=" + " ".join(cmpd))
 want=os.environ.get("CHECK_REPLY_TO_IFS","").split() or sorted({g.findtext("interface") for g in r.find("OPNsense/Gateways").iter("gateway_item") if (g.findtext("disabled") or "0")!="1" and (g.findtext("defaultgw") or "0")=="1" and (g.findtext("ipprotocol") or "inet")=="inet"})
 print("replyto=" + " ".join("%s:%s" % (i, "set" if (ifs.find(i) is not None and ifs.find(i).findtext("gateway")) else "MISSING") for i in want))

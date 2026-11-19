@@ -92,6 +92,9 @@ CHECK_REPLY_TO_IFS=""
 CHECK_DEVICES_MAY_DIFFER=""
 # config.xml sections that HA sync does not carry and that must be identical on
 # both nodes (space separated paths), and element names to ignore inside them.
+# Add the config of every service in MASTER_ONLY_SERVICES that is not synced,
+# e.g. "installedpackages/miniupnpd/config OPNsense/udpbroadcastrelays" for an
+# mDNS relay (os-udpbroadcastrelay).
 CHECK_COMPARE_CONFIG="installedpackages/miniupnpd/config"
 CHECK_COMPARE_IGNORE="overridewanip"
 
