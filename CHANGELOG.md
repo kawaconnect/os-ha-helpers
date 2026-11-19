@@ -4,6 +4,25 @@ Versions are git tags (`vX.Y.Z`). From 1.0.0 the repository is the os-ha-helpers
 OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers/Makefile`
 (1.0.0 = package 1.0). 0.0.x were the loose shell script kit.
 
+## [1.0.2] - 2026-11-19
+
+Package os-ha-helpers 1.0_3. First package built and signed by GitLab CI; the plugin's
+files are the same as in 1.0_2, only the version file differs.
+
+### Added
+- `.gitlab-ci.yml`: `make lint`, phpcs with the OPNsense core ruleset and `make package` on
+  every merge request and on `main`, on a FreeBSD 15 amd64 build runner. A protected `v*` tag
+  also signs the package with the release key (protected CI variable) and publishes the
+  `.pkg`, `SHA256SUMS` and `SHA256SUMS.sig` as release assets.
+- `tools/ci-build.sh`, `tools/ci-release.sh`.
+
+### Changed
+- `tools/install.sh` installs os-ha-helpers from the latest release by default
+  (`HA_RELEASE=vX.Y.Z` for another one, `HA_PKG_DIR` for a local directory) and verifies it
+  against `keys/release.pub` from the checkout, as before.
+- `tools/sign.sh` takes the package directory as an optional second argument.
+- `product_hash` in the package's version file is now this repository's commit.
+
 ## [1.0.1] - 2026-11-19
 
 Package os-ha-helpers 1.0_2. Review fixes, behaviour of the helpers unchanged.
