@@ -52,7 +52,7 @@
 #   HA_NO_CARPVIPDHCP=1  skip os-carp-vip-dhcp (no DHCP WAN)
 #   HA_SSH="..."         ssh command (default "ssh"), e.g. "ssh -J bastion"
 #   HA_RELEASE_API=...   GitLab project API (default
-#                        https://gitlab.kawalink.com/api/v4/projects/dean%2Fopnsense-ha)
+#                        https://gitlab.kawalink.com/api/v4/projects/dean%2Fos-ha-helpers)
 #   HA_GITLAB_TOKEN_FILE file holding a GitLab token with read_api (the project is
 #                        private); not needed for a public project
 set -eu
@@ -108,7 +108,7 @@ install_pkg() {
 
 # fetch_release <dir>: download the os-ha-helpers release assets into <dir>
 fetch_release() {
-    _api=${HA_RELEASE_API:-https://gitlab.kawalink.com/api/v4/projects/dean%2Fopnsense-ha}
+    _api=${HA_RELEASE_API:-https://gitlab.kawalink.com/api/v4/projects/dean%2Fos-ha-helpers}
     _rel=${HA_RELEASE:-latest}
     case "$_rel" in latest) _rel=permalink/latest ;; v[0-9]*) ;; *) echo "HA_RELEASE must be latest or vX.Y.Z" >&2; return 1 ;; esac
     case "$_rel" in *[!A-Za-z0-9/._-]*) echo "unsafe HA_RELEASE" >&2; return 1 ;; esac

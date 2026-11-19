@@ -13,7 +13,7 @@ Tore Amundsen (BSD-2-Clause, not in the OPNsense repositories), which keeps
 the DHCP lease on the CARP VIP so the address fails over with it. Install it
 separately; this plugin works with it unmodified.
 
-WWW: https://github.com/kawaconnect/opnsense-ha
+WWW: https://github.com/kawaconnect/os-ha-helpers
 
 Plugin Changelog
 ================

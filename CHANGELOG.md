@@ -4,6 +4,12 @@ Versions are git tags (`vX.Y.Z`). From 1.0.0 the repository is the os-ha-helpers
 OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers/Makefile`
 (1.0.0 = package 1.0). 0.0.x were the loose shell script kit.
 
+## [Unreleased]
+
+### Changed
+- Repository renamed `opnsense-ha` -> `os-ha-helpers` on GitLab and GitHub (old URLs redirect);
+  `tools/install.sh` reads releases from `dean/os-ha-helpers`, `pkg-descr` WWW points at the new GitHub URL.
+
 ## [1.0.2] - 2026-11-19
 
 Package os-ha-helpers 1.0_3. First package built and signed by GitLab CI; the plugin's
