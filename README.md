@@ -1,4 +1,4 @@
-# opnsense-ha: os-ha-helpers
+# os-ha-helpers
 
 An OPNsense plugin, **os-ha-helpers** ("CARP failover helpers", System: High Availability:
 Failover Helpers), that makes an HA pair (CARP + pfsync + config sync) fail over cleanly in
@@ -7,6 +7,7 @@ a backup node that needs internet access of its own, and services that must run 
 master only. Written for OPNsense 26.7 and checked with live failover drills (takeover
 under a second, no lost packets or DNS failures, clean failback).
 
+The repository was called `opnsense-ha` until 2026-11-19 (the old GitHub and GitLab URLs redirect).
 The repository holds the plugin source in the layout of the
 [opnsense/plugins](https://github.com/opnsense/plugins) ports tree
 (`sysutils/ha-helpers/`), CI that builds, signs and releases its package (`.gitlab-ci.yml`, GitLab release assets; the last hand-built package is in `packages/os-ha-helpers/`),
@@ -58,7 +59,7 @@ Failover Helpers Log (`/var/log/hahelpers/`, tags `hahelpers-egress`, `-dns`,
 ## Install
 
 ```sh
-git clone https://github.com/kawaconnect/opnsense-ha.git && cd opnsense-ha
+git clone https://github.com/kawaconnect/os-ha-helpers.git && cd os-ha-helpers
 tools/install.sh root@<backup-node>      # backup node first
 tools/install.sh root@<master-node>
 ```
