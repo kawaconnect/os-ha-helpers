@@ -87,7 +87,16 @@ if [ -z "$VIP" ] || [ -z "$IF" ]; then
 fi
 role=$(ha_role)
 kc=$(ha_keeper_conflict)
-[ -n "$kc" ] && [ "$DRY" = 0 ] && /usr/bin/logger -p daemon.warning -t hahelpers-egress "os-carp-vip-dhcp keeper also manages routes ($kc): set its 'Own default route by CARP role' to Off and untick 'Backup egress', or the two fight over the default route"
+# one warning per conflict and day, not one per CARP event and address
+KCF=/var/run/hahelpers-keeper-conflict
+if [ "$DRY" = 0 ]; then
+    if [ -z "$kc" ]; then
+        /bin/rm -f "$KCF"
+    elif [ "$(/bin/cat "$KCF" 2>/dev/null)" != "$kc" ] || [ -n "$(/usr/bin/find "$KCF" -mmin +1440 2>/dev/null)" ]; then
+        /usr/bin/logger -p daemon.warning -t hahelpers-egress "an os-carp-vip-dhcp keeper enforces its own routes ($kc): set its 'Own default route by CARP role' to Off or Observe, or the two fight over the default route"
+        printf '%s\n' "$kc" > "$KCF"
+    fi
+fi
 have=$(/usr/bin/netstat -rn -f inet | awk '$1=="0.0.0.0/1"||$1=="128.0.0.0/1"' | wc -l | tr -d ' ')
 defroute=$(ha_default_route)   # gateway@device, empty if none
 curdef=${HAHELPERS_TEST_DEF-${defroute%@*}}   # HAHELPERS_TEST_DEF/DEV: test hooks for --dry-run
@@ -96,7 +105,7 @@ curdev=${HAHELPERS_TEST_DEV-${defroute#*@}}
 if [ "${1:-}" = "--show" ]; then
     echo "role=$role vip=$VIP if=$IF vhid=$VHID peer=$PEER uptime=$(ha_uptime)s egress_routes=$have default=${curdef:-none}@${curdev:-none} upstream_by_priority=[$GWS]"
     echo "  settings: backup_egress=$BACKUP_EGRESS pin_default_route=$PIN_DEFAULT_ROUTE unusable_default_gws=[$UNUSABLE_DEFAULT_GWS]"
-    [ -n "$kc" ] && echo "  CONFLICT: os-carp-vip-dhcp keeper route handling is on ($kc); turn it off while this routing is on"
+    [ -n "$kc" ] && echo "  CONFLICT: an os-carp-vip-dhcp keeper enforces its own routes ($kc); set it to Off or Observe while this routing is on"
     for g in $GWS; do /sbin/ping -q -c 1 -W "$GW_PING_TIMEOUT_MS" "${g%@*}" >/dev/null 2>&1 && echo "  ${g%@*} (${g#*@}) answers ping" || echo "  ${g%@*} (${g#*@}) no ping reply"; done
     exit 0
 fi

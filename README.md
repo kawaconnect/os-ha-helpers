@@ -32,16 +32,16 @@ os-carp-vip-dhcp does one job: it keeps the DHCP lease on the CARP VIP. Everythi
 here (routing, master-only services, the Unbound restart, Tailscale handover, pfsync, MTU)
 belongs to this plugin, and the two are meant to be used side by side.
 
-**Turn the keeper's own routing off.** The keeper has two optional settings of its own,
+**Leave the keeper's own routing off.** The keeper has two optional settings of its own,
 "Own default route by CARP role" and "Backup egress" (the same `0/1` + `128/1` split via a
 LAN CARP VIP). They do the same job as this plugin's **Routing** ("Pin default route" and
-"Backup egress"), and two things managing the same routes will fight. While either of this
-plugin's routing settings is on, every keeper must have "Own default route by CARP role" set
-to **Off** and "Backup egress" **unticked**, as in `examples/carpvipdhcp-settings.xml`. The
-plugin checks this: the Status page and `configctl hahelpers show` print a CONFLICT line,
-the routing helper logs a warning on every run, and `tools/check.sh` fails. If you would
-rather use the keeper's routing, turn this plugin's "Pin default route" and "Backup egress"
-off instead.
+"Backup egress"), and two things managing the same routes will fight. Keep "Own default
+route by CARP role" at **Off** on every keeper, as in `examples/carpvipdhcp-settings.xml`.
+Observe is harmless (it only logs what it would do), and the keeper's backup egress does
+nothing unless that mode is Enforce. The plugin checks for an enforcing keeper: the settings
+and Status pages and `configctl hahelpers show` show the conflict, the routing helper logs a
+warning, and `tools/check.sh` fails. If you would rather use the keeper's routing, turn this
+plugin's "Pin default route" and "Backup egress" off instead.
 
 Why this plugin has its own routing: the keeper's routing covers one WAN, the one whose
 lease it keeps. Our pairs run several WANs (a DHCP WAN through the keeper, a static WAN on a
@@ -104,7 +104,11 @@ node has another version, and prints the node status. Without the tools: copy th
 the node and run `pkg install -U -y ./os-ha-helpers-<version>.pkg`.
 
 Then, on the master, open System: High Availability: Failover Helpers, tick **Enable**,
-pick the **Reference CARP address** (the LAN-side CARP VIP, from a list of the CARP VIPs on the node) and whatever else applies, **Apply**. The page warns when os-carp-vip-dhcp also manages routes, or when the chosen address is not active on the node. "Services" and "Jumbo MTU interfaces" offer the node's own service and device names; other values can be typed.
+pick the **Reference CARP address** (the LAN-side CARP VIP, from a list of the CARP VIPs
+on the node) and whatever else applies, **Apply**. The page warns when an os-carp-vip-dhcp
+keeper enforces routes of its own, or when the chosen address is not active on the node.
+"Services" and "Jumbo MTU interfaces" offer the node's own service and device names; other
+values can be typed.
 Add "CARP failover helpers" to the HA sync items (System: High Availability: Settings) and
 synchronise, or make the same settings on the backup. The "This node only" settings are
 never synchronised; set them on each node.
@@ -413,12 +417,12 @@ openssl base64 -d -in SHA256SUMS.sig -out /tmp/SHA256SUMS.sig.bin
 openssl dgst -sha256 -verify /tmp/upstream-release.pub -signature /tmp/SHA256SUMS.sig.bin SHA256SUMS
 ```
 
+The upstream key has not changed since v1.0. `tools/install.sh` checks `SHA256SUMS` and the signature before every install, with the key
+fingerprint pinned in the script.
+
 os-carp-vip-dhcp 1.19.0 (release candidate as of 2026-11) adds an optional setting, off by
 default, that sends from the lease MAC while master, for ISPs that check the source MAC. It
 changes nothing unless turned on and does not touch this plugin's settings.
-
-The upstream key has not changed since v1.0. `tools/install.sh` checks `SHA256SUMS` and the signature before every install, with the key
-fingerprint pinned in the script.
 
 ### Upgrading the plugin
 

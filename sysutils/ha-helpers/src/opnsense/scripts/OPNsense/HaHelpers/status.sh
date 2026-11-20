@@ -61,5 +61,5 @@ $(hostname)  ha-helpers ${ver:-unversioned}  up $(ha_uptime)s
   master-only services: ${svcs:-none configured}
   carp-vip-dhcp: ${keeper:-not installed}
 EOT
-[ -n "$kconf" ] && echo "  CONFLICT: carp-vip-dhcp keeper also manages routes ($kconf): set 'Own default route by CARP role' Off and untick 'Backup egress'"
+[ -n "$kconf" ] && echo "  CONFLICT: a carp-vip-dhcp keeper enforces its own routes ($kconf): set 'Own default route by CARP role' to Off or Observe"
 exit 0

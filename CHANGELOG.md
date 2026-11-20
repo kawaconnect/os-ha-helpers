@@ -6,6 +6,21 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-20
+
+Package os-ha-helpers 1.0_6. Review fixes for 1.0.3 and 1.0.4.
+
+### Fixed
+- The keeper conflict check of 1.0.3 was too broad. It now reports a keeper only when its
+  "Own default route by CARP role" is **Enforce** (Observe only logs, and the keeper's backup
+  egress does nothing unless the mode is Enforce), matches each keeper setting against the
+  setting of this plugin it collides with, and stays quiet while the helpers are disabled.
+- A stored VHID whose CARP address was deleted stays selected and labelled "no CARP address".
+  In 1.0.4 the form preselected another address, and the next save moved the helpers to it.
+- The routing helper logs the conflict once per change and day, not on every CARP event.
+- The settings page no longer waits for the suggestion lookups before it renders its lists,
+  and no longer suggests services a node needs in both roles (web GUI, SSH, Unbound and so on).
+
 ## [1.0.4] - 2026-11-20
 
 Package os-ha-helpers 1.0_5. Settings page.
@@ -42,7 +57,7 @@ Package os-ha-helpers 1.0_4. Feedback from the os-carp-vip-dhcp author.
 - `tools/install.sh` installs from the GitHub releases of kawaconnect/os-ha-helpers by default (no token);
   `HA_RELEASE_SOURCE=gitlab` keeps the GitLab route.
 - CI job `github`: each `v*` release is also published as a GitHub release with the same three files,
-  through the GitHub API with a repository-scoped token (no GitHub Actions; added). v1.0.2 was published there too.
+  through the GitHub API with a repository-scoped token (no GitHub Actions). v1.0.2 was published there too.
 
 ## [1.0.2] - 2026-11-19
 

@@ -73,4 +73,22 @@ class CarpVhidField extends BaseListField
         }
         $this->internalOptionList = $this->setStaticOptions($data);
     }
+
+    /**
+     * Keep a stored VHID whose CARP address is gone visible and selected.
+     * Without it the form would preselect another address and the next save
+     * would silently move the helpers to it.
+     */
+    public function getNodeData()
+    {
+        $result = parent::getNodeData();
+        $value = (string)$this->internalValue;
+        if ($value !== '' && !isset($this->internalOptionList[$value])) {
+            $result[$value] = [
+                'value' => sprintf(gettext('vhid %s: no CARP address'), $value),
+                'selected' => 1,
+            ];
+        }
+        return $result;
+    }
 }

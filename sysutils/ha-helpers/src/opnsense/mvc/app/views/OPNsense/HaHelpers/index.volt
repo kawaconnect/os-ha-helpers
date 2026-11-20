@@ -43,7 +43,7 @@
 
         function lookup(url, extract) {
             const dfObj = $.Deferred();
-            $.ajax({url: url, type: 'GET', dataType: 'json'})
+            $.ajax({url: url, type: 'GET', dataType: 'json', timeout: 5000})
                 .done(function (data) { dfObj.resolve(extract(data)); })
                 .fail(function () { dfObj.resolve([]); });
             return dfObj;
@@ -54,7 +54,7 @@
                 const status = data.status || {};
                 const notes = [];
                 if (status.keeper_routing) {
-                    notes.push("{{ lang._('os-carp-vip-dhcp also manages routes on this node (%s). On every keeper in Services: CARP VIP DHCP, set Own default route by CARP role to Off and untick Backup egress, or turn off Pin default route and Backup egress here. Two route managers fight over the default route.') }}".replace('%s', status.keeper_routing));
+                    notes.push("{{ lang._('An os-carp-vip-dhcp keeper enforces routes of its own on this node (%s). In Services: CARP VIP DHCP set Own default route by CARP role to Off or Observe, or turn off the matching setting here. Two route managers fight over the same routes.') }}".replace('%s', status.keeper_routing));
                 }
                 if (status.vhid && !status.role) {
                     notes.push("{{ lang._('The selected CARP address is not active on this node, so the helpers do nothing. Check Interfaces: Virtual IPs: Status.') }}");
@@ -65,10 +65,19 @@
         }
 
         mapDataToFormUI({'frm_GeneralSettings': '/api/hahelpers/settings/get'}).done(function () {
+            formatTokenizersUI();
+            $('.selectpicker').selectpicker('refresh');
+            /* the tokenizer reads the options on each search, so late suggestions need no refresh */
             $.when(
                 lookup('/api/core/service/search', function (data) {
-                    return (data.rows || []).map(function (row) { return row.name; })
-                        .filter(function (name, i, all) { return name && name !== 'hahelpers' && all.indexOf(name) === i; })
+                    /* never the services a node needs in either role */
+                    const never = ['hahelpers', 'carpvipdhcp', 'configd', 'webgui', 'openssh', 'pf', 'syslog-ng',
+                        'dpinger', 'routing', 'unbound', 'cron', 'ntpd', 'tailscale'];
+                    return (data.rows || []).filter(function (row) { return !row.locked; })
+                        .map(function (row) { return row.name; })
+                        .filter(function (name, i, all) {
+                            return name && never.indexOf(name) === -1 && all.indexOf(name) === i;
+                        })
                         .sort();
                 }),
                 lookup('/api/diagnostics/interface/get_interface_names', function (data) {
@@ -77,8 +86,6 @@
             ).done(function (services, devices) {
                 addChoices('hahelpers.general.masterOnlyServices', services);
                 addChoices('hahelpers.local.jumboMtuInterfaces', devices);
-                formatTokenizersUI();
-                $('.selectpicker').selectpicker('refresh');
             });
             updateServiceControlUI('hahelpers');
             showWarnings();
