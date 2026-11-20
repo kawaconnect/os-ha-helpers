@@ -126,6 +126,8 @@ the plugin renders from it (documentation addresses, RFC 5737).
 
 ## Settings
 
+![Failover Helpers settings page in OPNsense (System: High Availability: Failover Helpers), basic view](docs/images/settings.png)
+
 | GUI field | Script name | Default | |
 |---|---|---|---|
 | Enable, Reference CARP address | `VHID` | off, none | reference LAN-side CARP VIP, chosen from the configured CARP VIPs (stored as its VHID); nothing happens without it |
@@ -277,6 +279,8 @@ carried when "CARP failover helpers" is ticked in the sync items.
   plugin. The release signing key is kept outside it.
 
 ## Troubleshooting
+
+![Failover Helpers Status page on the MASTER node: role, CARP counters, pfsync, routes, gateways and master-only services](docs/images/status.png)
 
 | Symptom | Look at |
 |---|---|

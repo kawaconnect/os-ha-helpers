@@ -6,6 +6,10 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+### Docs
+
+- README: pictures of the Failover Helpers settings and status pages in `docs/images/`, drawn from the plugin form and status fields with example values.
+
 ### Fixed
 - `tools/check.sh` compared the installed os-ha-helpers with the last hand-built package in
   `packages/` (1.0_2) and failed on every CI release. It now expects the version in this
