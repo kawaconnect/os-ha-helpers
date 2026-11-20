@@ -55,13 +55,13 @@
         <id>hahelpers.general.backupEgress</id>
         <label>Backup egress</label>
         <type>checkbox</type>
-        <help>On the BACKUP node, route 0.0.0.0/1 and 128.0.0.0/1 through the master's CARP address so the node itself has internet (updates, NTP, blocklists). With os-carp-vip-dhcp installed, leave its own "Backup egress" unticked on every keeper.</help>
+        <help>On the BACKUP node, route 0.0.0.0/1 and 128.0.0.0/1 through the master's CARP address so the node itself has internet (updates, NTP, blocklists). With os-carp-vip-dhcp installed, do not also use a keeper's own "Backup egress" (it is active when the keeper's "Own default route by CARP role" is Enforce).</help>
     </field>
     <field>
         <id>hahelpers.general.pinDefaultRoute</id>
         <label>Pin default route</label>
         <type>checkbox</type>
-        <help>Keep the kernel default route on a usable upstream gateway and on that gateway's device, on both roles. Gateway monitoring cannot probe through the CARP addresses on a backup, so OPNsense may leave no default route there; a takeover would then forward nothing until the monitors recover. With os-carp-vip-dhcp installed, set its "Own default route by CARP role" to Off on every keeper.</help>
+        <help>Keep the kernel default route on a usable upstream gateway and on that gateway's device, on both roles. Gateway monitoring cannot probe through the CARP addresses on a backup, so OPNsense may leave no default route there; a takeover would then forward nothing until the monitors recover. With os-carp-vip-dhcp installed, keep "Own default route by CARP role" at Off (or Observe) on every keeper.</help>
     </field>
     <field>
         <id>hahelpers.general.unusableDefaultGws</id>
@@ -155,7 +155,7 @@
         <type>select_multiple</type>
         <style>tokenize</style>
         <allownew>true</allownew>
-        <help>Services that must run on the master only, for example miniupnpd, udpbroadcastrelay or ddclient, as listed under System: Diagnostics: Services (the list offers the services of this node; other names can be typed). They are started on MASTER and stopped otherwise, on CARP events, at boot and every two minutes. Enable each service on both nodes.</help>
+        <help>Services that must run on the master only, for example miniupnpd, udpbroadcastrelay or ddclient, as listed under System: Diagnostics: Services (the list offers services of this node; other names can be typed). They are started on MASTER and stopped otherwise, on CARP events, at boot and every two minutes. Enable each service on both nodes.</help>
     </field>
     <field>
         <id>hahelpers.general.serviceSettle</id>
@@ -218,7 +218,7 @@
         <type>select_multiple</type>
         <style>tokenize</style>
         <allownew>true</allownew>
-        <help>Devices (not interface names) forced to the jumbo MTU at boot, for example a disabled parent interface and the VLAN on it whose MTU OPNsense does not apply. A device that carries an upstream gateway is refused.</help>
+        <help>Devices (not interface names) forced to the jumbo MTU at boot. The list offers the assigned devices; type the name of an unassigned one. For example a disabled parent interface and the VLAN on it whose MTU OPNsense does not apply. A device that carries an upstream gateway is refused.</help>
     </field>
     <field>
         <id>hahelpers.local.jumboMtu</id>

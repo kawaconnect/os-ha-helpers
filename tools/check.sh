@@ -113,7 +113,7 @@ for n in A B; do
         [ "$(get keepers "$D")" -ge 1 ] 2>/dev/null && ok "$(get keepers "$D") keeper(s) configured" || fail "no keeper configured"
         # the keeper's own default route / backup egress fight this plugin's routing
         kr=$(get st:keeper_routing "$D")
-        [ -z "$kr" ] && ok "keeper route handling off (routing is done by os-ha-helpers)" || fail "keeper route handling on ($kr): set 'Own default route by CARP role' Off and untick 'Backup egress' in Services: CARP VIP DHCP"
+        [ -z "$kr" ] && ok "no keeper enforces routes of its own (routing is done by os-ha-helpers)" || fail "a keeper enforces its own routes ($kr): set 'Own default route by CARP role' to Off or Observe in Services: CARP VIP DHCP"
     fi
     ok "settings: $(get conf "$D") $(get localconf "$D")"
     # the pfsync protocol version follows the OPNsense release (1400 on 26.1, 1500 on 26.7): only compared across the pair below

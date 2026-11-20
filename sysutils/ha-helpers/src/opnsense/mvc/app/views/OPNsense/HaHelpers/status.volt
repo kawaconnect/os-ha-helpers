@@ -30,7 +30,7 @@
             'host': "{{ lang._('Host') }}",
             'version': "{{ lang._('Plugin version') }}",
             'uptime': "{{ lang._('Uptime (seconds)') }}",
-            'vhid': "{{ lang._('Reference VHID') }}",
+            'vhid': "{{ lang._('Reference CARP address (VHID)') }}",
             'vip': "{{ lang._('Reference address') }}",
             'role': "{{ lang._('Role') }}",
             'masters': "{{ lang._('Addresses in MASTER') }}",
@@ -47,7 +47,7 @@
             'gateways': "{{ lang._('Upstream gateways') }}",
             'services': "{{ lang._('Master-only services') }}",
             'keeper': "{{ lang._('CARP VIP DHCP keeper') }}",
-            'keeper_routing': "{{ lang._('Keeper route handling (must be empty)') }}"
+            'keeper_routing': "{{ lang._('Keeper routes in conflict') }}"
         };
 
         function fill(table, data, names) {

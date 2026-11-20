@@ -49,6 +49,7 @@ LOCK_TIMEOUT=30
 TAILSCALE_NODES=""            # Tailscale host names of both nodes; empty = tailscale_primary.sh does nothing
 TAILSCALE_HANDOVER_HOLD=45
 HA_SETTINGS="VHID BOOT_GRACE MASTER_ONLY_SERVICES JUMBO_MTU_IFS JUMBO_MTU PFSYNC_MAXUPD BACKUP_EGRESS PIN_DEFAULT_ROUTE UNUSABLE_DEFAULT_GWS GW_PING_TIMEOUT_MS PEER_PING_TIMEOUT_MS UNBOUND_RESTART_ON_MASTER DNS_CHECK_NAME DNS_CHECK_SERVER DNS_RESTART_TRIES DNS_SETTLE DNS_RETRY_WAIT EGRESS_HOOK_DELAY SERVICES_HOOK_DELAY SERVICES_BOOT_DELAY SERVICE_SETTLE LOCK_TIMEOUT TAILSCALE_NODES TAILSCALE_HANDOVER_HOLD"
+KEEPER_ROUTING=""             # filled by ha_load from the os-carp-vip-dhcp keepers
 HA_CONF=/usr/local/etc/hahelpers.conf
 # The rendered file is read, never sourced: only NAME="value" lines of the known
 # settings, with values made of address, name and pattern characters, are taken.
@@ -82,8 +83,8 @@ ha_gw_unusable() {
 
 # Sets: VIP IF (the reference CARP VIP and its device), PEER (pfsync peer IP),
 # GWS ("gw@device ..." upstream IPv4 gateways, best priority first),
-# KEEPER_ROUTING ("vip:defaultroute=<mode> vip:backupegress=1 ...": enabled
-# os-carp-vip-dhcp keepers whose own route handling is not off; empty if none).
+# KEEPER_ROUTING ("vip:defaultroute=enforce vip:backupegress=1 ...": enabled
+# os-carp-vip-dhcp keepers that write routes themselves; empty if none).
 # The output is eval'ed by a root shell, so only values made of address and
 # device-name characters are printed; anything else in config.xml reads as empty.
 ha_load() {
@@ -111,16 +112,17 @@ for it in r.find('OPNsense/Gateways').iter('gateway_item'):
 gws.sort()
 print('GWS="%s"' % ' '.join('%s@%s' % (x[1], x[2]) for x in gws))
 # os-carp-vip-dhcp has its own default-route and backup-egress handling per
-# keeper; with this plugin's routing on, both must stay off or the two fight
+# keeper. Only "enforce" writes routes ("observe" logs what it would do), and
+# its backup egress does nothing unless the mode is enforce.
 kr = []
 keepers = r.find('OPNsense/CarpVipDhcp/keepers')
 for k in (keepers.iter('keeper') if keepers is not None else []):
     if (k.findtext('enabled') or '0') != '1':
         continue
     vip = safe(k.findtext('carpVip')) or 'keeper'
-    mode = safe(k.findtext('defaultRouteMode') or 'off') or 'other'
-    if mode != 'off':
-        kr.append('%s:defaultroute=%s' % (vip, mode))
+    if (k.findtext('defaultRouteMode') or 'off') != 'enforce':
+        continue
+    kr.append('%s:defaultroute=enforce' % vip)
     if (k.findtext('backupEgress') or '0') == '1':
         kr.append('%s:backupegress=1' % vip)
 print('KEEPER_ROUTING="%s"' % ' '.join(kr))
@@ -128,13 +130,21 @@ PY
 )"
 }
 
-# 0 if $1 answers one of two pings within GW_PING_TIMEOUT_MS
-# Keeper route settings that collide with this plugin's routing (empty if none)
+# Keeper route settings that collide with this plugin's routing (empty if none):
+# an enforcing keeper against "Pin default route", its backup egress against ours.
 ha_keeper_conflict() {
-    ha_on "$BACKUP_EGRESS" || ha_on "$PIN_DEFAULT_ROUTE" || return 0
-    printf '%s' "$KEEPER_ROUTING"
+    [ -n "$VHID" ] || return 0
+    _kc=""
+    for _k in $KEEPER_ROUTING; do
+        case "$_k" in
+            *:defaultroute=*) ha_on "$PIN_DEFAULT_ROUTE" && _kc="$_kc $_k" ;;
+            *:backupegress=*) ha_on "$BACKUP_EGRESS" && _kc="$_kc $_k" ;;
+        esac
+    done
+    printf '%s' "${_kc# }"
 }
 
+# 0 if $1 answers one of two pings within GW_PING_TIMEOUT_MS
 ha_gw_alive() { /sbin/ping -q -c 1 -W "$GW_PING_TIMEOUT_MS" "$1" >/dev/null 2>&1 || /sbin/ping -q -c 1 -W "$GW_PING_TIMEOUT_MS" "$1" >/dev/null 2>&1; }
 
 # Device of a configured upstream gateway ("" if $1 is not one of them).
