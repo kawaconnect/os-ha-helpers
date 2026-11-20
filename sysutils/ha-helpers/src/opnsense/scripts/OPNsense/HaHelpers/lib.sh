@@ -81,7 +81,9 @@ ha_gw_unusable() {
 }
 
 # Sets: VIP IF (the reference CARP VIP and its device), PEER (pfsync peer IP),
-# GWS ("gw@device ..." upstream IPv4 gateways, best priority first).
+# GWS ("gw@device ..." upstream IPv4 gateways, best priority first),
+# KEEPER_ROUTING ("vip:defaultroute=<mode> vip:backupegress=1 ...": enabled
+# os-carp-vip-dhcp keepers whose own route handling is not off; empty if none).
 # The output is eval'ed by a root shell, so only values made of address and
 # device-name characters are printed; anything else in config.xml reads as empty.
 ha_load() {
@@ -108,11 +110,31 @@ for it in r.find('OPNsense/Gateways').iter('gateway_item'):
     gws.append((int(g('priority', '255')), g('gateway'), safe(ifmap.get(g('interface'), ''))))
 gws.sort()
 print('GWS="%s"' % ' '.join('%s@%s' % (x[1], x[2]) for x in gws))
+# os-carp-vip-dhcp has its own default-route and backup-egress handling per
+# keeper; with this plugin's routing on, both must stay off or the two fight
+kr = []
+keepers = r.find('OPNsense/CarpVipDhcp/keepers')
+for k in (keepers.iter('keeper') if keepers is not None else []):
+    if (k.findtext('enabled') or '0') != '1':
+        continue
+    vip = safe(k.findtext('carpVip')) or 'keeper'
+    mode = safe(k.findtext('defaultRouteMode') or 'off') or 'other'
+    if mode != 'off':
+        kr.append('%s:defaultroute=%s' % (vip, mode))
+    if (k.findtext('backupEgress') or '0') == '1':
+        kr.append('%s:backupegress=1' % vip)
+print('KEEPER_ROUTING="%s"' % ' '.join(kr))
 PY
 )"
 }
 
 # 0 if $1 answers one of two pings within GW_PING_TIMEOUT_MS
+# Keeper route settings that collide with this plugin's routing (empty if none)
+ha_keeper_conflict() {
+    ha_on "$BACKUP_EGRESS" || ha_on "$PIN_DEFAULT_ROUTE" || return 0
+    printf '%s' "$KEEPER_ROUTING"
+}
+
 ha_gw_alive() { /sbin/ping -q -c 1 -W "$GW_PING_TIMEOUT_MS" "$1" >/dev/null 2>&1 || /sbin/ping -q -c 1 -W "$GW_PING_TIMEOUT_MS" "$1" >/dev/null 2>&1; }
 
 # Device of a configured upstream gateway ("" if $1 is not one of them).

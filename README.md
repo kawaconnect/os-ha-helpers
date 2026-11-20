@@ -26,6 +26,36 @@ CARP VIP's virtual MAC, so the public address lives on the VIP and fails over wi
 Thank you. It is BSD-2-Clause licensed and used here unmodified, as the author's signed
 release package (see [Third-party package](#third-party-package-os-carp-vip-dhcp)).
 
+## Working with os-carp-vip-dhcp
+
+os-carp-vip-dhcp does one job: it keeps the DHCP lease on the CARP VIP. Everything else
+here (routing, master-only services, the Unbound restart, Tailscale handover, pfsync, MTU)
+belongs to this plugin, and the two are meant to be used side by side.
+
+**Turn the keeper's own routing off.** The keeper has two optional settings of its own,
+"Own default route by CARP role" and "Backup egress" (the same `0/1` + `128/1` split via a
+LAN CARP VIP). They do the same job as this plugin's **Routing** ("Pin default route" and
+"Backup egress"), and two things managing the same routes will fight. While either of this
+plugin's routing settings is on, every keeper must have "Own default route by CARP role" set
+to **Off** and "Backup egress" **unticked**, as in `examples/carpvipdhcp-settings.xml`. The
+plugin checks this: the Status page and `configctl hahelpers show` print a CONFLICT line,
+the routing helper logs a warning on every run, and `tools/check.sh` fails. If you would
+rather use the keeper's routing, turn this plugin's "Pin default route" and "Backup egress"
+off instead.
+
+Why this plugin has its own routing: the keeper's routing covers one WAN, the one whose
+lease it keeps. Our pairs run several WANs (a DHCP WAN through the keeper, a static WAN on a
+plain CARP VIP, a cellular or satellite WAN behind a private CPE address) and pick the one
+to use by gateway priority and, on the master, by which gateway answers a ping. It also
+works on pairs with no DHCP WAN at all.
+
+**Follow mode** (the keeper repoints the VIP and WAN gateway when the ISP hands out a new
+address) and this plugin do not get in each other's way: the routing helper reads the
+gateways from `config.xml` on every run, so the next CARP event or boot uses the new
+gateway, and it leaves a default route through any configured upstream gateway alone. If
+you see the two disagree, report it here, or, if it is the keeper, on
+[toreamun/opnsense-plugins](https://github.com/toreamun/opnsense-plugins/issues).
+
 ## What it does
 
 | Problem | What the plugin does |
@@ -382,6 +412,10 @@ sha256sum -c SHA256SUMS
 openssl base64 -d -in SHA256SUMS.sig -out /tmp/SHA256SUMS.sig.bin
 openssl dgst -sha256 -verify /tmp/upstream-release.pub -signature /tmp/SHA256SUMS.sig.bin SHA256SUMS
 ```
+
+os-carp-vip-dhcp 1.19.0 (release candidate as of 2026-11) adds an optional setting, off by
+default, that sends from the lease MAC while master, for ISPs that check the source MAC. It
+changes nothing unless turned on and does not touch this plugin's settings.
 
 The upstream key has not changed since v1.0. `tools/install.sh` checks `SHA256SUMS` and the signature before every install, with the key
 fingerprint pinned in the script.
