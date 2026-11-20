@@ -46,7 +46,8 @@
             'egress': "{{ lang._('Backup egress routes') }}",
             'gateways': "{{ lang._('Upstream gateways') }}",
             'services': "{{ lang._('Master-only services') }}",
-            'keeper': "{{ lang._('CARP VIP DHCP keeper') }}"
+            'keeper': "{{ lang._('CARP VIP DHCP keeper') }}",
+            'keeper_routing': "{{ lang._('Keeper route handling (must be empty)') }}"
         };
 
         function fill(table, data, names) {

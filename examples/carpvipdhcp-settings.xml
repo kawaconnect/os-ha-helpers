@@ -16,8 +16,8 @@
       <sendOptionsEncoded />
       <requestOptionsEncoded />
       <hostname />
-      <defaultRouteMode>off</defaultRouteMode> <!-- default route is handled by kc-ha-egress instead -->
-      <backupEgress>0</backupEgress>           <!-- backup-node egress is handled by kc-ha-egress instead -->
+      <defaultRouteMode>off</defaultRouteMode> <!-- must stay off: os-ha-helpers routing owns the default route -->
+      <backupEgress>0</backupEgress>           <!-- must stay off: os-ha-helpers adds the backup egress routes -->
       <backupEgressForm>split</backupEgressForm>
       <backupEgressGateway />
       <backupEgressInterface />

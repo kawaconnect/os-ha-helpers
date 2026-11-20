@@ -111,6 +111,9 @@ for n in A B; do
         case "$(get st:keeper "$D")" in *"is running"*) ok "keeper: $(get st:keeper "$D")" ;; *) fail "keeper not running" ;; esac
         [ "$(get keeper_hb_age "$D")" -lt "$CHECK_KEEPER_MAX_AGE" ] 2>/dev/null && ok "keeper heartbeat $(get keeper_hb_age "$D")s old; last: $(get keeper_last "$D")" || fail "keeper heartbeat stale ($(get keeper_hb_age "$D")s): $(get keeper_last "$D")"
         [ "$(get keepers "$D")" -ge 1 ] 2>/dev/null && ok "$(get keepers "$D") keeper(s) configured" || fail "no keeper configured"
+        # the keeper's own default route / backup egress fight this plugin's routing
+        kr=$(get st:keeper_routing "$D")
+        [ -z "$kr" ] && ok "keeper route handling off (routing is done by os-ha-helpers)" || fail "keeper route handling on ($kr): set 'Own default route by CARP role' Off and untick 'Backup egress' in Services: CARP VIP DHCP"
     fi
     ok "settings: $(get conf "$D") $(get localconf "$D")"
     # the pfsync protocol version follows the OPNsense release (1400 on 26.1, 1500 on 26.7): only compared across the pair below

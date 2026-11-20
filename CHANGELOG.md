@@ -6,15 +6,27 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-20
+
+Package os-ha-helpers 1.0_4. Feedback from the os-carp-vip-dhcp author.
+
+### Added
+- Conflict check with os-carp-vip-dhcp: when this plugin's routing (Pin default route or
+  Backup egress) is on and an enabled keeper has "Own default route by CARP role" not Off or
+  "Backup egress" ticked, the Status page (new row "Keeper route handling") and
+  `configctl hahelpers show` print a CONFLICT line, the routing helper logs a warning, and
+  `tools/check.sh` fails.
+- README section "Working with os-carp-vip-dhcp": keep the keeper's routing off, why this plugin
+  routes on its own (several WANs, priority + ping), follow mode, the 1.19 source-MAC option.
+
 ### Changed
+- `examples/carpvipdhcp-settings.xml` comments name os-ha-helpers instead of the old kit script.
 - Repository renamed `opnsense-ha` -> `os-ha-helpers` on GitLab and GitHub (old URLs redirect);
   `tools/install.sh` reads releases from `dean/os-ha-helpers`, `pkg-descr` WWW points at the new GitHub URL.
 - `tools/install.sh` installs from the GitHub releases of kawaconnect/os-ha-helpers by default (no token);
   `HA_RELEASE_SOURCE=gitlab` keeps the GitLab route.
-
-### Added
 - CI job `github`: each `v*` release is also published as a GitHub release with the same three files,
-  through the GitHub API with a repository-scoped token (no GitHub Actions). v1.0.2 was published there too.
+  through the GitHub API with a repository-scoped token (no GitHub Actions; added). v1.0.2 was published there too.
 
 ## [1.0.2] - 2026-11-19
 

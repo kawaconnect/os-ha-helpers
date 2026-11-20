@@ -43,10 +43,11 @@ gwst=$(for g in $GWS; do /sbin/ping -q -c 1 -W "$GW_PING_TIMEOUT_MS" "${g%@*}" >
 svcs=$(for s in $MASTER_ONLY_SERVICES; do case "$(/usr/local/sbin/pluginctl -s "$s" status 2>/dev/null)" in *"is running"*) printf '%s:running ' "$s" ;; *) printf '%s:stopped ' "$s" ;; esac; done)
 keeper=$(/usr/local/etc/rc.d/carpvipdhcp status 2>/dev/null | head -1)
 ver=$(/usr/sbin/pkg query %v os-ha-helpers 2>/dev/null)
+kconf=$(ha_keeper_conflict)
 if [ "${1:-}" = "--settings" ]; then ha_settings; exit 0; fi
 if [ "${1:-}" = "--kv" ]; then
-    printf 'vip=%s\nvhid=%s\nhost=%s\nrole=%s\nmasters=%s\nbackups=%s\ndemotion=%s\npreempt=%s\npfsync_demotion_factor=%s\nmaintenance=%s\npfsync=%s\nstates=%s\ndefault=%s\negress=%s\npeer=%s\nuptime=%s\ngateways=%s\nservices=%s\nkeeper=%s\nversion=%s\n' \
-        "$VIP" "$VHID" "$(hostname)" "$role" "$nm" "$nb" "$dem" "$pre" "$pdf" "$maint" "$pfs" "$states" "$def" "$egress" "$peer" "$(ha_uptime)" "$gwst" "$svcs" "$keeper" "$ver"
+    printf 'vip=%s\nvhid=%s\nhost=%s\nrole=%s\nmasters=%s\nbackups=%s\ndemotion=%s\npreempt=%s\npfsync_demotion_factor=%s\nmaintenance=%s\npfsync=%s\nstates=%s\ndefault=%s\negress=%s\npeer=%s\nuptime=%s\ngateways=%s\nservices=%s\nkeeper=%s\nkeeper_routing=%s\nversion=%s\n' \
+        "$VIP" "$VHID" "$(hostname)" "$role" "$nm" "$nb" "$dem" "$pre" "$pdf" "$maint" "$pfs" "$states" "$def" "$egress" "$peer" "$(ha_uptime)" "$gwst" "$svcs" "$keeper" "$kconf" "$ver"
     ha_settings | sed 's/^/cfg:/'
     exit 0
 fi
@@ -60,3 +61,5 @@ $(hostname)  ha-helpers ${ver:-unversioned}  up $(ha_uptime)s
   master-only services: ${svcs:-none configured}
   carp-vip-dhcp: ${keeper:-not installed}
 EOT
+[ -n "$kconf" ] && echo "  CONFLICT: carp-vip-dhcp keeper also manages routes ($kconf): set 'Own default route by CARP role' Off and untick 'Backup egress'"
+exit 0
