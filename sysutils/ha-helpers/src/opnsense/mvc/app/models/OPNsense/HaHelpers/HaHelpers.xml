@@ -34,9 +34,9 @@
                 <Default>0</Default>
                 <Required>Y</Required>
             </enabled>
-            <vhid type="IntegerField">
-                <MinimumValue>1</MinimumValue>
-                <MaximumValue>255</MaximumValue>
+            <vhid type=".\CarpVhidField">
+                <BlankDesc>None (helpers inert)</BlankDesc>
+                <ValidationMessage>Select a CARP virtual IP. Only CARP addresses configured under Interfaces: Virtual IPs can be used.</ValidationMessage>
             </vhid>
             <bootGrace type="IntegerField">
                 <Default>120</Default>

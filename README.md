@@ -104,7 +104,7 @@ node has another version, and prints the node status. Without the tools: copy th
 the node and run `pkg install -U -y ./os-ha-helpers-<version>.pkg`.
 
 Then, on the master, open System: High Availability: Failover Helpers, tick **Enable**,
-set the **Reference VHID** (the LAN-side CARP VIP) and whatever else applies, **Apply**.
+pick the **Reference CARP address** (the LAN-side CARP VIP, from a list of the CARP VIPs on the node) and whatever else applies, **Apply**. The page warns when os-carp-vip-dhcp also manages routes, or when the chosen address is not active on the node. "Services" and "Jumbo MTU interfaces" offer the node's own service and device names; other values can be typed.
 Add "CARP failover helpers" to the HA sync items (System: High Availability: Settings) and
 synchronise, or make the same settings on the backup. The "This node only" settings are
 never synchronised; set them on each node.
@@ -124,7 +124,7 @@ the plugin renders from it (documentation addresses, RFC 5737).
 
 | GUI field | Script name | Default | |
 |---|---|---|---|
-| Enable, Reference VHID | `VHID` | off, none | reference LAN-side CARP VIP; nothing happens without it |
+| Enable, Reference CARP address | `VHID` | off, none | reference LAN-side CARP VIP, chosen from the configured CARP VIPs (stored as its VHID); nothing happens without it |
 | Boot grace | `BOOT_GRACE` | 120 | seconds after boot a MASTER event is distrusted while the peer answers |
 | Backup egress | `BACKUP_EGRESS` | on | `0/1` + `128/1` via the master on the BACKUP |
 | Pin default route | `PIN_DEFAULT_ROUTE` | on | keep the default route on a usable upstream gateway and its device |
@@ -276,7 +276,7 @@ carried when "CARP failover helpers" is ticked in the sync items.
 
 | Symptom | Look at |
 |---|---|
-| Status shows the helpers not running | Enable and Reference VHID in the settings, then Apply |
+| Status shows the helpers not running | Enable and Reference CARP address in the settings, then Apply |
 | `tools/check.sh`: `files of the old script kit are still present` | the package did not archive them (see the install output), or old copies (`*.bak`): archive and remove them |
 | Backup node has no internet | Failover Helpers Status: role BACKUP, two backup egress routes |
 | New master forwards nothing right after takeover | the default route must be an upstream gateway on its WAN device; the log shows what was pinned |

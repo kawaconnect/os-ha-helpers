@@ -6,6 +6,22 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-20
+
+Package os-ha-helpers 1.0_5. Settings page.
+
+### Changed
+- Reference VHID is now **Reference CARP address**: a list of the CARP VIPs on the node
+  ("vhid 12: 10.10.12.1 on ClusterVLAN (description)") instead of a number to type. The stored
+  value is still the VHID, so existing settings and HA sync are unchanged; a VHID with no CARP
+  VIP behind it is refused on save.
+- "Services" (master-only) offers the service names of the node from the service list and
+  "Jumbo MTU interfaces" the device names of the assigned interfaces; other values can still be
+  typed.
+- The settings page shows a warning when an os-carp-vip-dhcp keeper also manages routes, and
+  when the selected CARP address is not active on the node. The help of "Backup egress" and
+  "Pin default route" names the keeper settings that must stay off.
+
 ## [1.0.3] - 2026-11-20
 
 Package os-ha-helpers 1.0_4. Feedback from the os-carp-vip-dhcp author.
