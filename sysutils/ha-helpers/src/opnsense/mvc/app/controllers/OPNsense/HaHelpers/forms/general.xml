@@ -36,9 +36,9 @@
     </field>
     <field>
         <id>hahelpers.general.vhid</id>
-        <label>Reference VHID</label>
-        <type>text</type>
-        <help>VHID of the LAN-side CARP address that defines the role of this node. The backup node reaches the master through this address. Nothing happens until it is set.</help>
+        <label>Reference CARP address</label>
+        <type>dropdown</type>
+        <help>The LAN-side CARP virtual IP whose state (MASTER or BACKUP) decides the role of this node. The backup node also reaches the internet through this address. Nothing happens until one is selected.</help>
     </field>
     <field>
         <id>hahelpers.general.bootGrace</id>
@@ -55,13 +55,13 @@
         <id>hahelpers.general.backupEgress</id>
         <label>Backup egress</label>
         <type>checkbox</type>
-        <help>On the BACKUP node, route 0.0.0.0/1 and 128.0.0.0/1 through the master's CARP address so the node itself has internet (updates, NTP, blocklists).</help>
+        <help>On the BACKUP node, route 0.0.0.0/1 and 128.0.0.0/1 through the master's CARP address so the node itself has internet (updates, NTP, blocklists). With os-carp-vip-dhcp installed, leave its own "Backup egress" unticked on every keeper.</help>
     </field>
     <field>
         <id>hahelpers.general.pinDefaultRoute</id>
         <label>Pin default route</label>
         <type>checkbox</type>
-        <help>Keep the kernel default route on a usable upstream gateway and on that gateway's device, on both roles. Gateway monitoring cannot probe through the CARP addresses on a backup, so OPNsense may leave no default route there; a takeover would then forward nothing until the monitors recover.</help>
+        <help>Keep the kernel default route on a usable upstream gateway and on that gateway's device, on both roles. Gateway monitoring cannot probe through the CARP addresses on a backup, so OPNsense may leave no default route there; a takeover would then forward nothing until the monitors recover. With os-carp-vip-dhcp installed, set its "Own default route by CARP role" to Off on every keeper.</help>
     </field>
     <field>
         <id>hahelpers.general.unusableDefaultGws</id>
@@ -155,7 +155,7 @@
         <type>select_multiple</type>
         <style>tokenize</style>
         <allownew>true</allownew>
-        <help>Services that must run on the master only, for example miniupnpd, udpbroadcastrelay or ddclient, by the name the service list uses. They are started on MASTER and stopped otherwise, on CARP events, at boot and every two minutes. Enable each service on both nodes.</help>
+        <help>Services that must run on the master only, for example miniupnpd, udpbroadcastrelay or ddclient, as listed under System: Diagnostics: Services (the list offers the services of this node; other names can be typed). They are started on MASTER and stopped otherwise, on CARP events, at boot and every two minutes. Enable each service on both nodes.</help>
     </field>
     <field>
         <id>hahelpers.general.serviceSettle</id>
@@ -218,7 +218,7 @@
         <type>select_multiple</type>
         <style>tokenize</style>
         <allownew>true</allownew>
-        <help>Devices forced to the jumbo MTU at boot, for example a disabled parent interface and the VLAN on it whose MTU OPNsense does not apply. A device that carries an upstream gateway is refused.</help>
+        <help>Devices (not interface names) forced to the jumbo MTU at boot, for example a disabled parent interface and the VLAN on it whose MTU OPNsense does not apply. A device that carries an upstream gateway is refused.</help>
     </field>
     <field>
         <id>hahelpers.local.jumboMtu</id>

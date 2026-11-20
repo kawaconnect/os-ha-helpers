@@ -26,10 +26,62 @@
 
 <script>
     $(document).ready(function () {
+        /*
+         * Offer what this node has as choices in the free-form lists: service names
+         * from the service list, device names from the interface list. Other values
+         * can still be typed. A failed lookup (no access to those pages) only means
+         * no suggestions.
+         */
+        function addChoices(fieldId, values) {
+            const $select = $('select[id="' + fieldId + '"]');
+            values.forEach(function (value) {
+                if ($select.find('option').filter(function () { return this.value === value; }).length === 0) {
+                    $select.append($('<option/>').val(value).text(value));
+                }
+            });
+        }
+
+        function lookup(url, extract) {
+            const dfObj = $.Deferred();
+            $.ajax({url: url, type: 'GET', dataType: 'json'})
+                .done(function (data) { dfObj.resolve(extract(data)); })
+                .fail(function () { dfObj.resolve([]); });
+            return dfObj;
+        }
+
+        function showWarnings() {
+            ajaxGet('/api/hahelpers/status/get', {}, function (data) {
+                const status = data.status || {};
+                const notes = [];
+                if (status.keeper_routing) {
+                    notes.push("{{ lang._('os-carp-vip-dhcp also manages routes on this node (%s). On every keeper in Services: CARP VIP DHCP, set Own default route by CARP role to Off and untick Backup egress, or turn off Pin default route and Backup egress here. Two route managers fight over the default route.') }}".replace('%s', status.keeper_routing));
+                }
+                if (status.vhid && !status.role) {
+                    notes.push("{{ lang._('The selected CARP address is not active on this node, so the helpers do nothing. Check Interfaces: Virtual IPs: Status.') }}");
+                }
+                const $box = $('#hahelpers_warnings').empty();
+                notes.forEach(function (note) { $box.append($('<div class="alert alert-warning" role="alert"/>').text(note)); });
+            });
+        }
+
         mapDataToFormUI({'frm_GeneralSettings': '/api/hahelpers/settings/get'}).done(function () {
-            formatTokenizersUI();
-            $('.selectpicker').selectpicker('refresh');
+            $.when(
+                lookup('/api/core/service/search', function (data) {
+                    return (data.rows || []).map(function (row) { return row.name; })
+                        .filter(function (name, i, all) { return name && name !== 'hahelpers' && all.indexOf(name) === i; })
+                        .sort();
+                }),
+                lookup('/api/diagnostics/interface/get_interface_names', function (data) {
+                    return Object.keys(data || {}).sort();
+                })
+            ).done(function (services, devices) {
+                addChoices('hahelpers.general.masterOnlyServices', services);
+                addChoices('hahelpers.local.jumboMtuInterfaces', devices);
+                formatTokenizersUI();
+                $('.selectpicker').selectpicker('refresh');
+            });
             updateServiceControlUI('hahelpers');
+            showWarnings();
         });
 
         $('#reconfigureAct').SimpleActionButton({
@@ -40,10 +92,13 @@
             },
             onAction: function () {
                 updateServiceControlUI('hahelpers');
+                showWarnings();
             }
         });
     });
 </script>
+
+<div id="hahelpers_warnings"></div>
 
 <div class="content-box">
     {{ partial('layout_partials/base_form', ['fields': generalForm, 'id': 'frm_GeneralSettings']) }}
