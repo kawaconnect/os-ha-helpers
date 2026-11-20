@@ -3,6 +3,7 @@
 #   tools/check.sh [-c check.conf] root@<node-a> root@<node-b>
 # Exit 0 = everything as expected. Any FAIL line: fix it, usually tools/install.sh <node>.
 # HA_NO_CARPVIPDHCP=1 skips the carp-vip-dhcp checks (sites without a DHCP WAN).
+# HA_EXPECT_VERSION=1.0_6 expects that os-ha-helpers version instead of this checkout's.
 # HA_SSH overrides the ssh command (default "ssh"), as in install.sh.
 # Settings for this check (CHECK_*, see tools/check.conf.sample) come from the
 # file given with -c, or HA_CHECK_CONF; the defaults below apply otherwise.
@@ -22,7 +23,11 @@ if [ -n "$conf" ]; then
     . "$conf"
 fi
 here=$(cd "$(dirname "$0")/.." && pwd)
-hhbase=$(basename "$(ls "$here"/packages/os-ha-helpers/*.pkg 2>/dev/null | head -1)" .pkg); hhver=${hhbase##*-}
+# expected os-ha-helpers version: this checkout's Makefile (as pkg reports it: 1.0_6, or 1.0 for
+# revision 0), or HA_EXPECT_VERSION when the pair runs another release on purpose
+mk=$here/sysutils/ha-helpers/Makefile
+pv=$(sed -n 's/^PLUGIN_VERSION=[[:space:]]*//p' "$mk"); pr=$(sed -n 's/^PLUGIN_REVISION=[[:space:]]*//p' "$mk")
+hhver=${HA_EXPECT_VERSION:-$pv}; [ -z "${HA_EXPECT_VERSION:-}" ] && [ -n "$pr" ] && [ "$pr" != 0 ] && hhver=${pv}_$pr
 plugdir=$here/third-party/os-carp-vip-dhcp
 pkgbase=$(basename "$(ls "$plugdir"/*.pkg 2>/dev/null | head -1)" .pkg); pkgver=${pkgbase##*-}; pkgname=${pkgbase%-*}
 H=/usr/local/opnsense/scripts/OPNsense/HaHelpers
@@ -101,7 +106,7 @@ for n in A B; do
     eval "D=\$$n"
     [ "$(get pyok "$D")" = 1 ] || { echo "the config.xml part of the collection failed on $(get hostname "$D"): nothing was checked"; exit 2; }
     host=$(get hostname "$D"); echo "== $host ($(get version "$D")) os-ha-helpers $(get hhpkg "$D")"
-    [ "$(get hhpkg "$D")" = "$hhver" ] && ok "os-ha-helpers $hhver" || fail "os-ha-helpers is '$(get hhpkg "$D")', repo has $hhver"
+    [ "$(get hhpkg "$D")" = "$hhver" ] && ok "os-ha-helpers $hhver" || fail "os-ha-helpers is '$(get hhpkg "$D")', this checkout is $hhver (HA_EXPECT_VERSION overrides)"
     [ "$(get hhcheck "$D")" = ok ] && ok "installed files match the package (pkg check -s)" || fail "pkg check -s os-ha-helpers: $(get hhcheck "$D")"
     case "$(get hhenabled "$D")" in *"is running"*) ok "helpers enabled with a reference VHID" ;; *) fail "helpers disabled or no reference VHID (System: High Availability: Failover Helpers)" ;; esac
     [ "$(get cron "$D")" = 2 ] && ok "2 cron jobs (master-only services, Tailscale handover)" || fail "$(get cron "$D") ha-helpers cron jobs, want 2 (configctl hahelpers restart)"

@@ -6,6 +6,11 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+### Fixed
+- `tools/check.sh` compared the installed os-ha-helpers with the last hand-built package in
+  `packages/` (1.0_2) and failed on every CI release. It now expects the version in this
+  checkout's `sysutils/ha-helpers/Makefile`; `HA_EXPECT_VERSION` overrides it.
+
 ## [1.0.5] - 2026-11-20
 
 Package os-ha-helpers 1.0_6. Review fixes for 1.0.3 and 1.0.4.
