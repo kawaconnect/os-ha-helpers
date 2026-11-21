@@ -65,13 +65,15 @@ you see the two disagree, report it here, or, if it is the keeper, on
 | Unbound on the new master answers SERVFAIL from failures it cached as backup | **DNS**: on the reference VIP's MASTER event, restart Unbound and verify that it resolves |
 | Services that must run on one node only (UPnP, mDNS/SSDP relay, ddclient) run on both | **Master-only services**: started on MASTER, stopped otherwise (CARP event, boot, cron every 2 minutes) |
 | With both nodes advertising the same Tailscale subnets, the backup can stay the active subnet router | **Tailscale**: the BACKUP stops `tailscaled` for a moment so the routes move to the MASTER. Off unless the Tailscale nodes are set |
-| Standby TCP state windows too stale to survive a planned failover | **pfsync**: `pfsync0 maxupd` (default 8) at boot |
+| Standby TCP state windows too stale to survive a planned failover | **pfsync**: `pfsync0 maxupd` (default 8) at early boot, before OPNsense configures pfsync, so no second bulk update starts during the boot-time CARP transition |
+| A pfsync bulk update that never completes (`syncok: 0`) keeps CARP demoted by the pfsync factor, and the node stays BACKUP for good | **pfsync watchdog**: cron every minute; with the node demoted by at least that factor, `syncok: 0` for 90 s and the peer answering on the SYNC link, re-triggers the bulk. Manual demotions (drills, maintenance) keep `syncok: 1` and are left alone |
 | A VLAN on a disabled parent interface stays at MTU 1500 | **Jumbo MTU** (per node, opt-in): forces the listed devices to the jumbo MTU at boot; refuses a WAN device |
 
 Same events, same order and the same logic as the script kit: CARP hooks
 `10-hahelpers-egress`, `20-hahelpers-unbound`, `30-hahelpers-services`,
-`60-hahelpers-tailscale`; boot hooks `95-hahelpers-pfsync`, `96-hahelpers-egress`,
-`97-hahelpers-mtu`, `98-hahelpers-services`; scripts in
+`60-hahelpers-tailscale`; boot hooks `45-hahelpers-pfsync` (early), `95-hahelpers-pfsync`,
+`96-hahelpers-egress`, `97-hahelpers-mtu`, `98-hahelpers-services`; cron jobs for the
+master-only services, the Tailscale handover and the pfsync watchdog; scripts in
 `/usr/local/opnsense/scripts/OPNsense/HaHelpers/`. Logs: System: High Availability:
 Failover Helpers Log (`/var/log/hahelpers/`, tags `hahelpers-egress`, `-dns`,
 `-services`, `-tailscale`, `-mtu`, `-pfsync`).
@@ -140,7 +142,7 @@ the plugin renders from it (documentation addresses, RFC 5737).
 | Restart Unbound on takeover, Check name/server, Restart attempts, Settle time, Check delay | `UNBOUND_RESTART_ON_MASTER`, `DNS_*` | on, opnsense.org, 127.0.0.1, 2, 4, 3 | Unbound restart and check |
 | Master-only services, Settle time, Event delay, Boot delay | `MASTER_ONLY_SERVICES`, `SERVICE_SETTLE`, `SERVICES_HOOK_DELAY`, `SERVICES_BOOT_DELAY` | none, 1, 3, 15 | services on the master only |
 | Tailscale nodes, Handover hold | `TAILSCALE_NODES`, `TAILSCALE_HANDOVER_HOLD` | none, 45 | Tailscale route handover |
-| pfsync maxupd | `PFSYNC_MAXUPD` | 8 (0 = leave alone) | set at boot; on a running MASTER only at the next boot |
+| pfsync maxupd | `PFSYNC_MAXUPD` | 8 (0 = leave alone) | set at early boot (logged once syslog runs: "early boot: pfsync maxupd ... before syncdev"); on a running MASTER only at the next boot |
 | Jumbo MTU interfaces, Jumbo MTU (this node only) | `JUMBO_MTU_IFS`, `JUMBO_MTU` | none, 9000 | devices forced to a jumbo MTU at boot |
 
 The settings live in `config.xml` under `OPNsense/HaHelpers`: `general` (HA-synced) and

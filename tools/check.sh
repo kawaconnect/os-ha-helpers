@@ -51,7 +51,7 @@ echo "hhenabled=$(/usr/local/sbin/configctl hahelpers status)"
 # settings synced by HA (all but the per-node interface list) must match across the pair
 echo "conf=$($H/status.sh --settings 2>/dev/null | grep -v -E '^JUMBO_MTU(_IFS)?=' | tr '\n' ' ')"
 echo "localconf=$($H/status.sh --settings 2>/dev/null | grep -E '^JUMBO_MTU(_IFS)?=' | tr '\n' ' ')"
-echo "kitfiles=$(ls /usr/local/sbin/kc-ha-* /usr/local/sbin/kc-unbound-master /usr/local/etc/rc.syshook.d/*/*-kc-* /usr/local/etc/rc.syshook.d/start/95-pfsync-maxupd /etc/cron.d/kc-ha-* /usr/local/etc/kc-ha.conf 2>/dev/null | tr '\n' ' ')"
+echo "kitfiles=$(ls /usr/local/sbin/kc-ha-* /usr/local/sbin/kc-unbound-master /usr/local/etc/rc.syshook.d/*/*-kc-* /usr/local/etc/rc.syshook.d/start/95-pfsync-maxupd /usr/local/sbin/kc-pfsync-watchdog /etc/cron.d/kc-ha-* /etc/cron.d/kc-pfsync-watchdog /usr/local/etc/kc-ha.conf 2>/dev/null | tr '\n' ' ')"
 echo "cron=$(crontab -l 2>/dev/null | grep -c "$H/")"
 $H/status.sh --kv 2>/dev/null | sed 's/^/st:/'
 echo "keeper_hb_age=$(( $(date +%s) - $(stat -f %m /var/run/carpvipdhcp-*.hb 2>/dev/null || echo 0) ))"
@@ -109,7 +109,7 @@ for n in A B; do
     [ "$(get hhpkg "$D")" = "$hhver" ] && ok "os-ha-helpers $hhver" || fail "os-ha-helpers is '$(get hhpkg "$D")', this checkout is $hhver (HA_EXPECT_VERSION overrides)"
     [ "$(get hhcheck "$D")" = ok ] && ok "installed files match the package (pkg check -s)" || fail "pkg check -s os-ha-helpers: $(get hhcheck "$D")"
     case "$(get hhenabled "$D")" in *"is running"*) ok "helpers enabled with a reference VHID" ;; *) fail "helpers disabled or no reference VHID (System: High Availability: Failover Helpers)" ;; esac
-    [ "$(get cron "$D")" = 2 ] && ok "2 cron jobs (master-only services, Tailscale handover)" || fail "$(get cron "$D") ha-helpers cron jobs, want 2 (configctl hahelpers restart)"
+    [ "$(get cron "$D")" = 3 ] && ok "3 cron jobs (master-only services, Tailscale handover, pfsync watchdog)" || fail "$(get cron "$D") ha-helpers cron jobs, want 3 (configctl hahelpers restart)"
     [ -z "$(get kitfiles "$D")" ] && ok "no files of the old script kit" || fail "files of the old script kit are still present: $(get kitfiles "$D")"
     if [ -z "${HA_NO_CARPVIPDHCP:-}" ]; then
         [ "$(get pkg "$D")" = "$pkgver" ] && ok "$pkgname $pkgver" || fail "$pkgname is '$(get pkg "$D")', repo has $pkgver"
