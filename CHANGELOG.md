@@ -6,6 +6,11 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+### Changed
+- The CI job `github` is gone: GitHub releases are made from the GitLab release by the shared
+  release sync (`kcops/github-release-sync`, every 15 minutes), so this project needs no GitHub
+  token. The job never had its token and could not reach GitHub's download host from the build runner.
+
 ## [1.0.7] - 2026-11-21
 
 Package os-ha-helpers 1.0_8.
