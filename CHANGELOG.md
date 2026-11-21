@@ -6,6 +6,20 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-21
+
+Package os-ha-helpers 1.0_8.
+
+### Fixed
+- Tailscale handover after a quick failback: the node that had just handed the routes over
+  kept tailscaled down for the whole hold even after it became MASTER again, and the new
+  BACKUP, which then held the routes, saw the master offline in the tailnet and kept them
+  until the next cron run. Tailscale traffic went through the backup for about two minutes
+  after a drill. The hold now ends as soon as the node is no longer BACKUP, and a BACKUP that
+  holds the routes waits up to 30 s for the master to come online before it leaves them to
+  the next run. The wait also keeps the CARP events of the other VIPs (they find the lock
+  taken) from logging "master is not online" once per VIP.
+
 ## [1.0.6] - 2026-11-21
 
 Package os-ha-helpers 1.0_7.
