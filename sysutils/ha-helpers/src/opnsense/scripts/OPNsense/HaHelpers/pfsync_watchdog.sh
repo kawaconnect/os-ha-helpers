@@ -42,6 +42,8 @@ ok=$(echo "$pfs" | awk '/syncok:/ {print $2}')
 peer=$(echo "$pfs" | awk '{for(i=1;i<=NF;i++) if($i=="syncpeer:") print $(i+1)}')
 mu=$(echo "$pfs" | awk '{for(i=1;i<=NF;i++) if($i=="maxupd:") print $(i+1)}')
 case "${dem:-x}${fac:-x}${mu:-x}" in *[!0-9-]*) rm -f "$ST"; exit 0 ;; esac
+# an IPv4 peer address only (anything else, e.g. a parse of the next field, is "no peer")
+case "$peer" in *[!0-9.]*|.*|*.|*..*) peer="" ;; esac
 if [ -z "$peer" ] || [ "$ok" != "0" ] || [ "$fac" -le 0 ] || [ "$dem" -lt "$fac" ]; then
     rm -f "$ST"
     exit 0
