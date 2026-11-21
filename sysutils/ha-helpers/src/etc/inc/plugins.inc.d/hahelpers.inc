@@ -61,6 +61,8 @@ function hahelpers_cron()
         $jobs[]['autocron'] = ['/usr/local/opnsense/scripts/OPNsense/HaHelpers/master_services.sh', '*/2'];
         /* the backup hands Tailscale subnet routes back to the master (no-op without tailscale nodes) */
         $jobs[]['autocron'] = ['/usr/local/opnsense/scripts/OPNsense/HaHelpers/tailscale_primary.sh', '*/2'];
+        /* re-trigger a pfsync bulk update that hangs with CARP demoted (no-op otherwise) */
+        $jobs[]['autocron'] = ['/usr/local/opnsense/scripts/OPNsense/HaHelpers/pfsync_watchdog.sh', '*'];
     }
 
     return $jobs;

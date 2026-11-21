@@ -35,7 +35,9 @@ LEGACY="/usr/local/sbin/kc-ha-lib /usr/local/sbin/kc-ha-egress /usr/local/sbin/k
 /usr/local/etc/rc.syshook.d/start/95-pfsync-maxupd /usr/local/etc/rc.syshook.d/start/96-kc-ha-egress
 /usr/local/etc/rc.syshook.d/start/97-kc-jumbo-mtu /usr/local/etc/rc.syshook.d/start/98-kc-ha-master-services
 /usr/local/etc/rc.syshook.d/start/98-ha-master-services
+/usr/local/etc/rc.syshook.d/early/45-kc-pfsync-maxupd /usr/local/sbin/kc-pfsync-watchdog
 /etc/cron.d/kc-ha-master-services /etc/cron.d/kc-ha-tailscale-primary /etc/cron.d/ha-master-services
+/etc/cron.d/kc-pfsync-watchdog
 /usr/local/etc/kc-ha.conf /usr/local/etc/kc-ha.conf.sample /usr/local/etc/kc-ha.version"
 FOUND=""
 for FILE in ${LEGACY}; do
@@ -57,3 +59,7 @@ fi
 
 # apply the settings now (routes, master-only services, cron jobs)
 /usr/local/sbin/configctl hahelpers start > /dev/null
+
+# the Syslog template rendered above adds the filter for /var/log/hahelpers; syslog-ng
+# reads it only on restart, so without this the log stays empty until the next reboot
+/usr/local/sbin/configctl syslog restart > /dev/null

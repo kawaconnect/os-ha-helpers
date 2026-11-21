@@ -32,12 +32,16 @@
 . /usr/local/opnsense/scripts/OPNsense/HaHelpers/lib.sh
 H=/usr/local/opnsense/scripts/OPNsense/HaHelpers
 
-# cron jobs come from hahelpers_cron(); regenerate the crontab when the helpers
-# were switched on or off since it was last written
-if [ -n "$VHID" ]; then want=1; else want=0; fi
-have=$(/usr/bin/grep -c "$H/master_services.sh" /var/cron/tabs/root 2>/dev/null)
-if [ "${have:-0}" -gt 0 ]; then have=1; else have=0; fi
-[ "$want" = "$have" ] || /usr/local/sbin/configctl -dq cron restart
+# cron jobs come from hahelpers_cron(); regenerate the crontab when it does not
+# hold exactly the jobs the helpers want: switched on or off since it was last
+# written, or a package update added or dropped a job
+regen=0
+for job in master_services.sh tailscale_primary.sh pfsync_watchdog.sh; do
+    if /usr/bin/grep -q "$H/$job" /var/cron/tabs/root 2>/dev/null; then have=1; else have=0; fi
+    if [ -n "$VHID" ]; then want=1; else want=0; fi
+    [ "$want" = "$have" ] || regen=1
+done
+[ "$regen" = 0 ] || /usr/local/sbin/configctl -dq cron restart
 
 if [ -z "$VHID" ]; then
     echo "OK"

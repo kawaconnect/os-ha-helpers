@@ -6,11 +6,34 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-21
+
+Package os-ha-helpers 1.0_7.
+
+### Added
+- Early boot hook `45-hahelpers-pfsync`: sets `pfsync0 maxupd` before OPNsense configures
+  pfsync, as the script kit's `early/45-kc-pfsync-maxupd` did. The boot hook alone changed
+  maxupd after the node could already have preempted to MASTER, which starts a second bulk
+  update during a CARP transition. syslog is not running that early, so the next pfsync run
+  logs "early boot: pfsync maxupd ... before syncdev" under `hahelpers-pfsync`.
+- pfsync watchdog (`pfsync_watchdog.sh`, cron every minute), the script kit's
+  `kc-pfsync-watchdog`: re-triggers a pfsync bulk update that hangs with the node demoted
+  by the pfsync factor and `syncok: 0` for 90 s while the peer answers on the SYNC link.
+
 ### Docs
 
 - README: pictures of the Failover Helpers settings and status pages in `docs/images/`, drawn from the plugin form and status fields with example values.
 
 ### Fixed
+- Upgrading from the script kit left `early/45-kc-pfsync-maxupd`, `kc-pfsync-watchdog` and its
+  cron file in place, and `tools/check.sh` failed on them. They are archived and removed with
+  the rest of the kit.
+- `/var/log/hahelpers/` stayed empty after an install until syslog-ng was restarted (or the
+  node rebooted): the install now restarts syslog after rendering its filter.
+- `tools/check.sh` expects three cron jobs (the pfsync watchdog is the third).
+- Applying the settings regenerated the crontab only when the helpers were switched on or off,
+  so a package update that adds a cron job (the pfsync watchdog) left it out until the next
+  cron regeneration. It now regenerates whenever a wanted job is missing or an unwanted one is left.
 - `tools/check.sh` compared the installed os-ha-helpers with the last hand-built package in
   `packages/` (1.0_2) and failed on every CI release. It now expects the version in this
   checkout's `sysutils/ha-helpers/Makefile`; `HA_EXPECT_VERSION` overrides it.
