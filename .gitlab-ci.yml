@@ -5,6 +5,9 @@
 # for this repository only, unprivileged user gitlab-runner). See README "Build and release".
 
 workflow:
+  # A newer commit cancels the running pipeline's interruptible jobs; sign and publish are not interruptible.
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -18,6 +21,8 @@ stages: [check, build, release]
 default:
   tags: [freebsd-opnsense]
   interruptible: true
+  # Every job normally takes under 10s; 10m fails a hung job on its own instead of the 60m project default.
+  timeout: 10m
 
 variables:
   GIT_DEPTH: "20"
