@@ -6,6 +6,8 @@ OPNsense plugin; the package version is `PLUGIN_VERSION` in `sysutils/ha-helpers
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-21
+
 Package os-ha-helpers 1.0_7.
 
 ### Added
