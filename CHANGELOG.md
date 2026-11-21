@@ -29,6 +29,9 @@ Package os-ha-helpers 1.0_7.
 - `/var/log/hahelpers/` stayed empty after an install until syslog-ng was restarted (or the
   node rebooted): the install now restarts syslog after rendering its filter.
 - `tools/check.sh` expects three cron jobs (the pfsync watchdog is the third).
+- Applying the settings regenerated the crontab only when the helpers were switched on or off,
+  so a package update that adds a cron job (the pfsync watchdog) left it out until the next
+  cron regeneration. It now regenerates whenever a wanted job is missing or an unwanted one is left.
 - `tools/check.sh` compared the installed os-ha-helpers with the last hand-built package in
   `packages/` (1.0_2) and failed on every CI release. It now expects the version in this
   checkout's `sysutils/ha-helpers/Makefile`; `HA_EXPECT_VERSION` overrides it.
